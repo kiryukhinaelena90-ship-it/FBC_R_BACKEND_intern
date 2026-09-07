@@ -174,6 +174,9 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
     employer_addon_rate = cfg$employer_addon_rate
   )
   
+  state$legal_form <- cfg$legal_form %||% "freelance"
+state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
+  
   # factual billable hours from Cockpit
   state$owner$physical_available_hours_month <- state$owner$available_hours_month
   state$owner$available_hours_month <-
