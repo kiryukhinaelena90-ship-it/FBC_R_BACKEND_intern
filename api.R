@@ -364,61 +364,31 @@ analyze_handler <- function(req, res) {
     return(fbc_p0_payload(cfg))
   }
 
-  enabled <-
-    identical(
-      tolower(Sys.getenv("FBC_ENABLE_P1_RUNNER", "false")),
-      "true"
-    )
-
-  if (!enabled) {
-    res$status <- 503
-    return(
-      list(
-        error = "p1_runner_not_enabled",
-        message = paste(
-          "P0 is live. P1/P2 runner is bundled but intentionally",
-          "disabled until MC data and production policy/runtime gate",
-          "are configured."
-        )
-      )
-    )
-  }
-
-  if (
-    is.null(cfg$min_target_probability) ||
-    is.null(cfg$min_debt_service_ratio)
-  ) {
-    res$status <- 422
-    return(
-      list(
-        error = "policy_thresholds_required",
-        message =
-          "P1 may not invent robustness or debt-service thresholds."
-      )
-    )
-  }
-
   runner_cfg <- fbc_runner39_cfg(cfg)
 
-  if (!file.exists(runner_cfg$mc_file)) {
-    res$status <- 503
-    return(
-      list(
-        error = "mc_file_missing",
-        message =
-          "Set FBC_MC_FILE to the validated production Monte Carlo CSV."
+  source(
+    file.path(ROOT, "40_run_deterministic_p1.R"),
+    local = .GlobalEnv
+  )
+
+  tryCatch(
+    {
+      payload <- fbc_run_deterministic_p1_40(
+        runner_cfg,
+        root = ROOT
       )
-    )
-  }
 
-  res$status <- 503
+      return(payload)
+    },
+    error = function(e){
+      res$status <- 500
 
-  list(
-    error = "p1_financial_adapter_gate",
-    message = paste(
-      "Runner 39 is bundled, but P1 execution stays blocked until",
-      "dynamic tax/pension adapter is wired through the candidate",
-      "evaluator and re-run in R."
-    )
+      return(
+        list(
+          error = "p1_deterministic_failed",
+          message = conditionMessage(e)
+        )
+      )
+    }
   )
 }
