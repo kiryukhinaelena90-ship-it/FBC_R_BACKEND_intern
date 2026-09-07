@@ -264,7 +264,11 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
     state = state,
     reality = reality,
     influence = influence,
-    objective_mode = cfg$objective_mode %||% "reach_income_target",
+    objective_mode =
+  if(identical(cfg$objective_mode %||% "", "reduce_owner_work"))
+    "reduce_owner_work"
+  else
+    "reach_income_target",
     desired_net = cfg$desired_net %||% state$owner$monthly_target,
     
     confirmed_bounds = list(
