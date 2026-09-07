@@ -22,4 +22,4 @@ COPY . /app
 ENV PORT=8000
 EXPOSE 8000
 
-CMD ["R", "-q", "-e", "pr <- plumber::plumb('api.R'); pr$run(host='0.0.0.0', port=as.integer(Sys.getenv('PORT','8000')))"]
+CMD ["R", "-q", "-e", "source('api.R'); pr <- plumber::pr(); pr <- plumber::pr_get(pr, '/health', health_handler); pr <- plumber::pr_post(pr, '/analyze', analyze_handler, parsers='json', serializer=plumber::serializer_unboxed_json()); pr$run(host='0.0.0.0', port=as.integer(Sys.getenv('PORT','8000')))"]
