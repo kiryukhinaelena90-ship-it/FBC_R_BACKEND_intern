@@ -103,16 +103,35 @@ build_optimizer_problem26 <- function(
     ep <- if ("employee_customer_price"%in%names(x)) x["employee_customer_price"] else state$employee$customer_price
     eh <- if ("employee_billable_hours"%in%names(x)) x["employee_billable_hours"] else state$employee$available_hours_month
 
-    evaluate_point21(
-      state=state,
-      owner_price=price,
-      owner_hours=hours,
-      operating_costs=costs,
-      employee_customer_price=ep,
-      employee_billable_hours=eh,
-      owner_pension_month=owner_pension_month,
-      tax_month=tax_month
-    )$net_available
+    pt <- evaluate_point21(
+  state=state,
+  owner_price=price,
+  owner_hours=hours,
+  operating_costs=costs,
+  employee_customer_price=ep,
+  employee_billable_hours=eh,
+  owner_pension_month=0,
+  tax_month=0
+)
+
+if(exists("fbc_financial_point24", mode="function")){
+
+  gross_before_owner_protection_tax <-
+    pt$net_available + state$owner$insurance_month
+
+  fin <- fbc_financial_point24(
+    gross_before_owner_protection_tax,
+    state$owner,
+    legal_form =
+      state$legal_form %||% "freelance",
+    trade_tax_rate =
+      state$trade_tax_rate %||% 0
+  )
+
+  return(fin$net_available)
+}
+
+pt$net_available
   }
 
   # Scale-free movement from current state.
