@@ -384,4 +384,4 @@ function(req, res) {
     message="Runner 39 is bundled, but P1 execution stays blocked until dynamic tax/pension adapter is wired through the candidate evaluator and re-run in R."
   )
 }
-install.packages("httr2")
+
