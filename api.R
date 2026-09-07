@@ -313,75 +313,112 @@ fbc_runner39_cfg <- function(cfg){
   out
 }
 
-#* Health check
-#* @get /health
-function(req,res){
+health_handler <- function(req, res) {
   list(
-    status="ok",
-    service="FUTURE Business Cockpit R backend",
-    backend_version="FBC_R_BACKEND_P0_1.0",
-    p0=TRUE,
-    p1_runner_enabled=identical(tolower(Sys.getenv("FBC_ENABLE_P1_RUNNER","false")),"true"),
-    mc_file_present=file.exists(Sys.getenv("FBC_MC_FILE",unset=file.path(ROOT,"data","processed","fbc_monte_carlo_draws.csv")))
+    status = "ok",
+    service = "FUTURE Business Cockpit R backend",
+    backend_version = "FBC_R_BACKEND_P0_1.0",
+    p0 = TRUE,
+    p1_runner_enabled =
+      identical(
+        tolower(Sys.getenv("FBC_ENABLE_P1_RUNNER", "false")),
+        "true"
+      ),
+    mc_file_present =
+      file.exists(
+        Sys.getenv(
+          "FBC_MC_FILE",
+          unset = file.path(
+            ROOT,
+            "data",
+            "processed",
+            "fbc_monte_carlo_draws.csv"
+          )
+        )
+      )
   )
 }
 
-#* Analyze Cockpit request
-#* @post /analyze
-#* @parser json
-#* @serializer unboxedJSON
-function(req, res) {
-  if(!fbc_authorized(req)){
+analyze_handler <- function(req, res) {
+
+  if (!fbc_authorized(req)) {
     res$status <- 401
-    return(list(error="unauthorized"))
+    return(list(error = "unauthorized"))
   }
 
   cfg <- req$body
+
   errors <- fbc_validate_request(cfg)
-  if(length(errors)){
+
+  if (length(errors)) {
     res$status <- 422
-    return(list(error="invalid_fbc_request",fields=as.list(errors)))
+    return(
+      list(
+        error = "invalid_fbc_request",
+        fields = as.list(errors)
+      )
+    )
   }
 
-  # P0 always works without inventing decision bounds.
-  if(!fbc_has_evidence(cfg)){
+  if (!fbc_has_evidence(cfg)) {
     return(fbc_p0_payload(cfg))
   }
 
-  # P1 is deliberately gated. The bundled runner 39 is retained for the next
-  # backend-only integration stage; frontend does not need another deploy.
-  enabled <- identical(tolower(Sys.getenv("FBC_ENABLE_P1_RUNNER","false")),"true")
-  if(!enabled){
+  enabled <-
+    identical(
+      tolower(Sys.getenv("FBC_ENABLE_P1_RUNNER", "false")),
+      "true"
+    )
+
+  if (!enabled) {
     res$status <- 503
-    return(list(
-      error="p1_runner_not_enabled",
-      message="P0 is live. P1/P2 runner is bundled but intentionally disabled until MC data and production policy/runtime gate are configured."
-    ))
+    return(
+      list(
+        error = "p1_runner_not_enabled",
+        message = paste(
+          "P0 is live. P1/P2 runner is bundled but intentionally",
+          "disabled until MC data and production policy/runtime gate",
+          "are configured."
+        )
+      )
+    )
   }
 
-  if(is.null(cfg$min_target_probability) || is.null(cfg$min_debt_service_ratio)){
+  if (
+    is.null(cfg$min_target_probability) ||
+    is.null(cfg$min_debt_service_ratio)
+  ) {
     res$status <- 422
-    return(list(
-      error="policy_thresholds_required",
-      message="P1 may not invent robustness or debt-service thresholds."
-    ))
+    return(
+      list(
+        error = "policy_thresholds_required",
+        message =
+          "P1 may not invent robustness or debt-service thresholds."
+      )
+    )
   }
 
   runner_cfg <- fbc_runner39_cfg(cfg)
-  if(!file.exists(runner_cfg$mc_file)){
+
+  if (!file.exists(runner_cfg$mc_file)) {
     res$status <- 503
-    return(list(
-      error="mc_file_missing",
-      message="Set FBC_MC_FILE to the validated production Monte Carlo CSV."
-    ))
+    return(
+      list(
+        error = "mc_file_missing",
+        message =
+          "Set FBC_MC_FILE to the validated production Monte Carlo CSV."
+      )
+    )
   }
 
-  # Runner 39 currently accepts monthly tax/pension context. It must not be
-  # silently used with zero values in production. Keep the gate explicit.
   res$status <- 503
+
   list(
-    error="p1_financial_adapter_gate",
-    message="Runner 39 is bundled, but P1 execution stays blocked until dynamic tax/pension adapter is wired through the candidate evaluator and re-run in R."
+    error = "p1_financial_adapter_gate",
+    message = paste(
+      "Runner 39 is bundled, but P1 execution stays blocked until",
+      "dynamic tax/pension adapter is wired through the candidate",
+      "evaluator and re-run in R."
+    )
   )
 }
-install.packages("httr2")

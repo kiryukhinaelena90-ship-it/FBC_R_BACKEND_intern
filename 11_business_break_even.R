@@ -23,9 +23,7 @@
 #
 # ==========================================
 
-setwd("~/Documents/FBC_Statistics")
 
-source("10_gesamtkosten_kapitaldienst.R")
 
 
 # ------------------------------------------
