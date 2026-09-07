@@ -12,9 +12,7 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN R -q -e "install.packages('jsonlite', repos='https://cloud.r-project.org', dependencies=TRUE)"
-
-RUN R -q -e "install.packages('plumber', repos='https://cloud.r-project.org', dependencies=TRUE)"
+RUN R -q -e "install.packages(c('jsonlite','plumber'), repos='https://cloud.r-project.org')"
 
 RUN R -q -e "stopifnot(requireNamespace('plumber', quietly=TRUE)); stopifnot(requireNamespace('jsonlite', quietly=TRUE))"
 
