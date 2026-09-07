@@ -1,0 +1,4 @@
+Place the validated production file here as:
+fbc_monte_carlo_draws.csv
+
+Do not replace it with synthetic/test draws for production.
