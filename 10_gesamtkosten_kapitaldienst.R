@@ -25,7 +25,7 @@
 # Er erzeugt die saubere Kostenbasis dafür.
 # ==========================================
 
-setwd("~/Documents/FBC_Statistics")
+
 
 
 # ------------------------------------------
