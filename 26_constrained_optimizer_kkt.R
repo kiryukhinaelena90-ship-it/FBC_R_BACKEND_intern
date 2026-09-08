@@ -53,16 +53,9 @@ build_optimizer_problem26 <- function(
 # the factual physical capacity preserved by runner 40.
 cur_h <- state$owner$available_hours_month
 
-physical_h <- as.numeric(
-  state$owner$physical_available_hours_month %||%
-    reality$bounds$owner_hours_month_max
+owner_h_max <- as.numeric(
+  reality$bounds$owner_hours_month_max
 )
-
-owner_h_max <- min(
-  as.numeric(reality$bounds$owner_hours_month_max),
-  physical_h
-)
-
 if (objective_mode=="reduce_owner_work") {
   add_var("owner_hours", cur_h, 0, cur_h)
 } else if (is.finite(owner_h_max) && owner_h_max > cur_h) {
