@@ -436,6 +436,17 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
       "free capacity is not treated as demand"
   )
   
-  payload
+     payload
+
+  }, error=function(e){
+    stop(
+      sprintf(
+        "[P1 stage=%s] %s",
+        stage,
+        conditionMessage(e)
+      ),
+      call. = FALSE
+    )
+  })
 }
 
