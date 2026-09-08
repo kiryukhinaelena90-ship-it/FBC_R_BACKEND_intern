@@ -366,7 +366,7 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
     one_time_fee = cfg$financing$one_time_fee %||% 0,
     binding = cfg$financing$binding %||% NA_character_
   )
-  
+  stage <- "38_production_decision"
   result <- fbc_run_production_decision38(
     problem = problem,
     candidate_pool = fast$candidate_pool,
