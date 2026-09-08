@@ -304,11 +304,217 @@ state_rules$employee$billable_hours_month <-
     verbose = isTRUE(cfg$verbose)
   )
   
-  if(!isTRUE(fast$feasible) || !length(fast$candidate_pool))
+ if(!isTRUE(fast$feasible) || !length(fast$candidate_pool)){
+
+  # No target-feasible KKT solution exists within the confirmed real-world
+  # bounds. This is an economic result, not a technical backend failure.
+  best <- fbc_fast_best_corner(problem)
+
+  if(!is.finite(best$net) || is.null(best$x))
     stop(
-      "No feasible KKT candidate pool: ",
+      "No feasible target solution and no valid best-attainable solution: ",
       fast$reason %||% "unknown reason"
     )
+
+  best_solution <- best$x
+  names(best_solution) <- problem$registry$name
+
+  best_candidate <- list(
+    active_levers = problem$registry$name[
+      abs(best_solution - problem$registry$current) > 1e-6
+    ],
+    solution = best_solution,
+    projected_net = as.numeric(best$net),
+    metrics = fbc_fast_metrics(problem, best_solution),
+    cardinality = sum(
+      abs(best_solution - problem$registry$current) > 1e-6
+    )
+  )
+
+  ip <- prod_rules$implementation_plan
+  ip <- ip[ip$lever %in% problem$registry$name,,drop=FALSE]
+
+  missing_ip <- setdiff(
+    best_candidate$active_levers,
+    ip$lever
+  )
+
+  if(length(missing_ip))
+    stop(
+      "Missing evidenced implementation timing for best-attainable levers: ",
+      paste(missing_ip, collapse=", ")
+    )
+
+  monthly_eval <- function(solution, month){
+    problem$evaluate(solution)
+  }
+
+  be_eval <- function(solution){
+    s <- fbc_state_from_solution40(
+      state,
+      problem,
+      solution
+    )
+
+    fbc_business_break_even40(
+      s,
+      cfg$variable_cost_keys %||% character(),
+      cfg$employee_variable_cost_per_hour %||% 0
+    )
+  }
+
+  capital_eval <- function(solution){
+    s <- fbc_state_from_solution40(
+      state,
+      problem,
+      solution
+    )
+
+    cur <- calc_current_business_result19(
+      s,
+      owner_pension_month = cfg$owner_pension_month %||% 0,
+      tax_month = cfg$tax_month %||% 0
+    )
+
+    revenue <- cur$owner_revenue + cur$employee_revenue
+    ds <- calc_current_debt_capacity19(s, revenue)
+
+    list(
+      ratio = ds$debt_service_ratio,
+      ok = ds$debt_service_covered,
+      liquidity_after_debt_service =
+        ds$liquidity_after_debt_service
+    )
+  }
+
+  validation <- fbc_validate_post_decision(
+    problem = problem,
+    candidate = best_candidate,
+    implementation_plan = ip,
+    horizon_months = cfg$horizon_months %||% 12,
+    post_target_months = cfg$post_target_months %||% 6,
+    monthly_evaluator = monthly_eval,
+    mc_evaluator = NULL,
+    break_even_evaluator = be_eval,
+    capital_service_evaluator = capital_eval,
+    min_target_probability = NULL,
+    min_debt_service_ratio = NULL
+  )
+
+  changes <- fbc_build_change_payload38(
+    problem,
+    best_candidate
+  )
+
+  shapley <- fbc_build_shapley_explanation38(
+    problem,
+    best_candidate,
+    shapley_exact27C
+  )
+
+  be_detail <- be_eval(best_solution)
+
+  current_net <- as.numeric(
+    problem$evaluate(problem$registry$current)
+  )
+
+  target <- as.numeric(problem$desired_net)
+
+  remaining_gap <- max(
+    0,
+    target - as.numeric(best$net)
+  )
+
+  remaining_gap_pct <-
+    if(is.finite(target) && target > 0)
+      100 * remaining_gap / target
+    else NA_real_
+
+  payload <- list(
+    schema_version = "fbc_decision_payload_v1",
+
+    status = "target_not_reachable",
+
+    current = list(
+      expected_net = current_net,
+      monthly_target = target,
+      target_gap_eur = max(0, target - current_net),
+      target_gap_percent =
+        if(is.finite(target) && target > 0)
+          100 * max(0, target - current_net) / target
+        else NA_real_
+    ),
+
+    recommendation = list(
+      candidate_id = NULL,
+      active_levers = best_candidate$active_levers,
+      changes = changes,
+      projected_net = as.numeric(best$net),
+      target_reached = FALSE,
+      remaining_gap_eur = remaining_gap,
+      remaining_gap_percent = remaining_gap_pct,
+      explanation = shapley
+    ),
+
+    target_path = list(
+      time_to_target_months =
+        validation$time_to_target_months,
+      target_reached_within_horizon = FALSE,
+      implementation_months_max =
+        validation$implementation_months_max,
+      path = validation$time_path
+    ),
+
+    post_decision = list(
+      post_target_stable =
+        validation$post_target_stable,
+      max_post_target_gap_eur =
+        validation$max_post_target_gap_eur,
+      mc_target_probability = NULL,
+      mc_policy_ok = NULL,
+      business_break_even_margin_eur =
+        validation$business_break_even_margin_eur,
+      business_break_even_ok =
+        validation$business_break_even_ok,
+      employee_break_even_ok =
+        validation$employee_break_even_ok,
+      capital_service_ratio =
+        validation$capital_service_ratio,
+      capital_service_ok =
+        validation$capital_service_ok
+    ),
+
+    break_even = be_detail,
+
+    robustness = list(
+      target_probability = NULL,
+      p10 = NULL,
+      p50 = NULL,
+      p90 = NULL
+    ),
+
+    production_meta = list(
+      input_schema = cfg$schema_version,
+      backend = "FBC_R_BACKEND_P1_DETERMINISTIC_1.0",
+      candidate_count = 0,
+      optimizer_levers =
+        as.list(problem$registry$name),
+      financing_separate = TRUE,
+      target_feasible = FALSE,
+      best_attainable_used = TRUE
+    ),
+
+    audit = list(
+      path = "P1_DETERMINISTIC_TARGET_NOT_REACHABLE",
+      mc_executed = FALSE,
+      optimizer_executed = TRUE,
+      demand_guard =
+        "free capacity is not treated as demand"
+    )
+  )
+
+  return(payload)
+}
   
   ip <- prod_rules$implementation_plan
   ip <- ip[ip$lever %in% problem$registry$name,,drop=FALSE]
