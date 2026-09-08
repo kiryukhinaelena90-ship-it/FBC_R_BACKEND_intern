@@ -394,6 +394,7 @@ fbc_build_production_rules37v2 <- function(state,confirmed=list(),cost_evidence=
     if(!is.null(confirmed$employee_billable_hours)){
       ev <- confirmed$employee_billable_hours
       requested_upper <- as.numeric(ev$upper)
+      effective_upper <- requested_upper
 
       paid_cap <- as.numeric(state$employee$paid_hours_month %||% Inf)
       if(is.finite(emp$max_paid_hours_month))
