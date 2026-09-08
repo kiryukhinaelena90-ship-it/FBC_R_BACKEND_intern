@@ -208,7 +208,14 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
   else 0
   
   state_rules <- state
-  
+  # Explicit factual billable-hours contract for production rules 37.
+# In the decision state these hours are held in available_hours_month,
+# while rules37 expects billable_hours_month as the factual baseline.
+state_rules$owner$billable_hours_month <-
+  state$owner$available_hours_month
+
+state_rules$employee$billable_hours_month <-
+  state$employee$available_hours_month
   state_rules$employee$contract_hours_week <-
     cfg$employee$contract_hours_week %||% cfg$employee$hours_week
   
