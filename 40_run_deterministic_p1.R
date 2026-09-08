@@ -266,7 +266,7 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
     ]
     if(length(v)) as.numeric(v[1]) else NULL
   }
-  
+  stage <- "26_optimizer_problem"
   problem <- build_optimizer_problem26(
     state = state,
     reality = reality,
