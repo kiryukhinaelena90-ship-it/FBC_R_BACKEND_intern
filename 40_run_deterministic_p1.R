@@ -8,9 +8,11 @@
 
 `%||%` <- function(a,b) if(is.null(a) || length(a)==0L) b else a
 
-fbc_source40 <- function(file){
-  if(!file.exists(file)) stop("Required FBC module missing: ", file)
-  source(file, local=.GlobalEnv)
+fbc_source40 <- function(file, envir){
+  if(!file.exists(file))
+    stop("Required FBC module missing: ", file)
+
+  source(file, local=envir)
 }
 
 fbc_load_modules40 <- function(root=getwd()){
