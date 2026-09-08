@@ -252,7 +252,7 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
     financing_alternative = NULL,
     min_debt_service_ratio = NULL
   )
-  
+  stage <- "21_influence"
   influence <- build_differential_influence21(
     state = state,
     reality = reality,
