@@ -167,7 +167,7 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
   tryCatch({
 
     fbc_load_modules40(root)
-  
+  stage <- "18_build_state"
   state <- build_cockpit_decision_state18(
     owner = cfg$owner,
     operating_costs = cfg$operating_costs,
