@@ -161,8 +161,12 @@ fbc_business_break_even40 <- function(
 }
 
 fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
-  
-  fbc_load_modules40(root)
+
+  stage <- "load_modules"
+
+  tryCatch({
+
+    fbc_load_modules40(root)
   
   state <- build_cockpit_decision_state18(
     owner = cfg$owner,
