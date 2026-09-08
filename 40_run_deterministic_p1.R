@@ -290,7 +290,7 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
     owner_pension_month = cfg$owner_pension_month %||% 0,
     tax_month = cfg$tax_month %||% 0
   )
-  
+  stage <- "fast_candidate_search"
   fast <- run_fbc_fast_candidate_search(
     problem = problem,
     max_actions = cfg$max_actions %||% nrow(problem$registry),
