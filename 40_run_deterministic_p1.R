@@ -221,7 +221,7 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
     if(cfg$employee$days_week > 0)
       cfg$employee$hours_week / cfg$employee$days_week
   else NA_real_
-  
+  stage <- "37_production_rules"
   prod_rules <- fbc_build_production_rules37v2(
     state = state_rules,
     confirmed = cfg$confirmed_bounds,
