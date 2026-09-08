@@ -242,7 +242,7 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
   
   if(!length(owner_hours_max))
     owner_hours_max <- state$owner$available_hours_month
-  
+  stage <- "19_reality"
   reality <- build_reality_constraints19(
     state = state,
     cost_controls = cc,
