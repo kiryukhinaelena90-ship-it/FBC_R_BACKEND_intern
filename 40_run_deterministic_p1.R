@@ -33,7 +33,13 @@ fbc_load_modules40 <- function(root=getwd(), envir){
     "38_production_decision_pipeline.R"
   )
   
-  invisible(lapply(file.path(root, mods), fbc_source40))
+  invisible(
+  lapply(
+    file.path(root, mods),
+    fbc_source40,
+    envir = envir
+  )
+)
 }
 
 fbc_state_from_solution40 <- function(base_state, problem, solution){
