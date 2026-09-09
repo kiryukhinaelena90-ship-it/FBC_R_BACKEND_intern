@@ -405,8 +405,7 @@ effective_upper <- requested_upper
         as.numeric(ev$lower %||% state$employee$billable_hours_month),
         effective_upper,
         ev$source_type,
-        paste0(ev$reason %||% "Bestätigte abrechenbare Kapazität",
-               "; employment cap applied"),
+        ev$reason %||% "Bestätigte abrechenbare Kapazität",
         ev$implementation
       )
     }
