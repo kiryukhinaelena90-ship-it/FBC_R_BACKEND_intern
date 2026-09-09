@@ -581,14 +581,30 @@ audit = list(
     "free capacity is not treated as demand",
 
   auxiliary_analysis = list(
-    post_validation_ok = is.null(validation_error),
-    post_validation_error = validation_error,
+    implementation_timing_ok =
+      is.null(implementation_timing_error),
+    implementation_timing_error =
+      implementation_timing_error,
 
-    shapley_ok = is.null(shapley_error),
-    shapley_error = shapley_error,
+    post_validation_ok =
+      is.null(validation_error),
+    post_validation_error =
+      validation_error,
 
-    break_even_ok = is.null(break_even_error),
-    break_even_error = break_even_error
+    changes_ok =
+      is.null(changes_error),
+    changes_error =
+      changes_error,
+
+    shapley_ok =
+      is.null(shapley_error),
+    shapley_error =
+      shapley_error,
+
+    break_even_ok =
+      is.null(break_even_error),
+    break_even_error =
+      break_even_error
   )
 )
   )
