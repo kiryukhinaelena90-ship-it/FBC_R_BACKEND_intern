@@ -120,7 +120,7 @@ fbc_empty_robustness41 <- function(reason=NULL){
 fbc_mc_risk_drivers41 <- function(layer, max_n=5L){
   rows <- list()
 
-  for(k in FBC_COST_KEYS29){
+  for(k in as.character(layer$exposure$key)){
     exposed <- isTRUE(layer$exposure$statistical_exposure[layer$exposure$key==k])
     if(exposed){
       x <- layer$draws[[paste0("cost_", k)]]
