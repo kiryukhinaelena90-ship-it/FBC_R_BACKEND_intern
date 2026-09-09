@@ -366,20 +366,21 @@ analyze_handler <- function(req, res) {
 
   runner_cfg <- fbc_runner39_cfg(cfg)
 
-  source(
-    file.path(ROOT, "40_run_deterministic_p1.R"),
-    local = .GlobalEnv
-  )
+source(
+  file.path(ROOT, "43_run_p1_mc_fazit.R"),
+  local = .GlobalEnv
+)
 
-  tryCatch(
-    {
-      payload <- fbc_run_deterministic_p1_40(
-        runner_cfg,
-        root = ROOT
-      )
+tryCatch(
+  {
+    payload <- fbc_run_p1_mc_fazit_43(
+      cfg = runner_cfg,
+      root = ROOT,
+      mc_file = runner_cfg$mc_file
+    )
 
-      return(payload)
-    },
+    return(payload)
+  },
     error = function(e){
       res$status <- 500
 
