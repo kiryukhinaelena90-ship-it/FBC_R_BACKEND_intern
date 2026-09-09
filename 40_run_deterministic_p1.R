@@ -331,13 +331,22 @@ state_rules$employee$billable_hours_month <-
   best_solution <- best$x
   names(best_solution) <- problem$registry$name
 
+   metrics_error <- NULL
+
+best_metrics <- tryCatch(
+  fbc_fast_metrics(problem, best_solution),
+  error = function(e){
+    metrics_error <<- conditionMessage(e)
+    list()
+  }
+)
   best_candidate <- list(
     active_levers = problem$registry$name[
       abs(best_solution - problem$registry$current) > 1e-6
     ],
     solution = best_solution,
     projected_net = as.numeric(best$net),
-    metrics = fbc_fast_metrics(problem, best_solution),
+    metrics = best_metrics,
     cardinality = sum(
       abs(best_solution - problem$registry$current) > 1e-6
     )
