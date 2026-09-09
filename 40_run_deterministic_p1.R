@@ -297,8 +297,9 @@ state_rules$employee$billable_hours_month <-
     desired_net = cfg$desired_net %||% state$owner$monthly_target,
     
     confirmed_bounds = list(
-      owner_price_max = get_upper("owner_price")
-    ),
+  owner_price_max = get_upper("owner_price"),
+  owner_hours_max = get_upper("owner_hours")
+),
     
     employee_bounds = list(
       customer_price_max = get_upper("employee_customer_price"),
