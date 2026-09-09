@@ -461,7 +461,17 @@ shapley <- tryCatch(
   }
 )
 
-  be_detail <- be_eval(best_solution)
+  stage <- "target_not_reachable_break_even"
+
+break_even_error <- NULL
+
+be_detail <- tryCatch(
+  be_eval(best_solution),
+  error = function(e){
+    break_even_error <<- conditionMessage(e)
+    NULL
+  }
+)
 
   current_net <- as.numeric(
     problem$evaluate(problem$registry$current)
