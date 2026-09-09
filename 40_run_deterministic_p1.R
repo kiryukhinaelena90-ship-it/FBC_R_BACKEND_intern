@@ -399,7 +399,12 @@ state_rules$employee$billable_hours_month <-
     )
   }
 
-  validation <- fbc_validate_post_decision(
+stage <- "target_not_reachable_post_validation"
+
+validation_error <- NULL
+
+validation <- tryCatch(
+  fbc_validate_post_decision(
     problem = problem,
     candidate = best_candidate,
     implementation_plan = ip,
@@ -411,7 +416,24 @@ state_rules$employee$billable_hours_month <-
     capital_service_evaluator = capital_eval,
     min_target_probability = NULL,
     min_debt_service_ratio = NULL
-  )
+  ),
+  error = function(e){
+    validation_error <<- conditionMessage(e)
+
+    list(
+      time_to_target_months = NA_real_,
+      implementation_months_max = NA_real_,
+      time_path = NULL,
+      post_target_stable = NA,
+      max_post_target_gap_eur = NA_real_,
+      business_break_even_margin_eur = NA_real_,
+      business_break_even_ok = NA,
+      employee_break_even_ok = NA,
+      capital_service_ratio = NA_real_,
+      capital_service_ok = NA
+    )
+  }
+)
 
   changes <- fbc_build_change_payload38(
     problem,
