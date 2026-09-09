@@ -437,10 +437,18 @@ validation <- tryCatch(
   }
 )
 
-  changes <- fbc_build_change_payload38(
+changes_error <- NULL
+
+changes <- tryCatch(
+  fbc_build_change_payload38(
     problem,
     best_candidate
-  )
+  ),
+  error = function(e){
+    changes_error <<- conditionMessage(e)
+    list()
+  }
+)
 
 stage <- "target_not_reachable_shapley"
 
