@@ -396,8 +396,6 @@ fbc_build_production_rules37v2 <- function(state,confirmed=list(),cost_evidence=
       requested_upper <- as.numeric(ev$upper)
       effective_upper <- requested_upper
 
-      requested_upper <- as.numeric(ev$upper)
-effective_upper <- requested_upper
 
       rows[[length(rows)+1L]] <- fbc_make_bound37v2(
         "employee_billable_hours",
