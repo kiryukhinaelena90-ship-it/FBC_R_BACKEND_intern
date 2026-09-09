@@ -563,13 +563,24 @@ be_detail <- tryCatch(
       best_attainable_used = TRUE
     ),
 
-    audit = list(
-      path = "P1_DETERMINISTIC_TARGET_NOT_REACHABLE",
-      mc_executed = FALSE,
-      optimizer_executed = TRUE,
-      demand_guard =
-        "free capacity is not treated as demand"
-    )
+audit = list(
+  path = "P1_DETERMINISTIC_TARGET_NOT_REACHABLE",
+  mc_executed = FALSE,
+  optimizer_executed = TRUE,
+  demand_guard =
+    "free capacity is not treated as demand",
+
+  auxiliary_analysis = list(
+    post_validation_ok = is.null(validation_error),
+    post_validation_error = validation_error,
+
+    shapley_ok = is.null(shapley_error),
+    shapley_error = shapley_error,
+
+    break_even_ok = is.null(break_even_error),
+    break_even_error = break_even_error
+  )
+)
   )
 
   return(payload)
