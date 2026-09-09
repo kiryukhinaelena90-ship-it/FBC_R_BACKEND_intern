@@ -346,16 +346,18 @@ state_rules$employee$billable_hours_month <-
   ip <- prod_rules$implementation_plan
   ip <- ip[ip$lever %in% problem$registry$name,,drop=FALSE]
 
-  missing_ip <- setdiff(
-    best_candidate$active_levers,
-    ip$lever
-  )
+missing_ip <- setdiff(
+  best_candidate$active_levers,
+  ip$lever
+)
 
+implementation_timing_error <-
   if(length(missing_ip))
-    stop(
-      "Missing evidenced implementation timing for best-attainable levers: ",
+    paste(
+      "Missing evidenced implementation timing for:",
       paste(missing_ip, collapse=", ")
     )
+  else NULL
 
   monthly_eval <- function(solution, month){
     problem$evaluate(solution)
