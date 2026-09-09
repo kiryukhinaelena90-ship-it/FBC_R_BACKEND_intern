@@ -440,11 +440,26 @@ validation <- tryCatch(
     best_candidate
   )
 
-  shapley <- fbc_build_shapley_explanation38(
+stage <- "target_not_reachable_shapley"
+
+shapley_error <- NULL
+
+shapley <- tryCatch(
+  fbc_build_shapley_explanation38(
     problem,
     best_candidate,
     shapley_exact27C
-  )
+  ),
+  error = function(e){
+    shapley_error <<- conditionMessage(e)
+
+    list(
+      available = FALSE,
+      sentence = NULL,
+      contributions = list()
+    )
+  }
+)
 
   be_detail <- be_eval(best_solution)
 
