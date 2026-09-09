@@ -396,14 +396,8 @@ fbc_build_production_rules37v2 <- function(state,confirmed=list(),cost_evidence=
       requested_upper <- as.numeric(ev$upper)
       effective_upper <- requested_upper
 
-      paid_cap <- as.numeric(state$employee$paid_hours_month %||% Inf)
-      if(is.finite(emp$max_paid_hours_month))
-        paid_cap <- min(paid_cap,emp$max_paid_hours_month)
-
-      weekly_cap_month <- if(is.finite(emp$max_hours_week))
-        emp$max_hours_week*52/12 else Inf
-
-      effective_upper <- min(requested_upper,paid_cap,weekly_cap_month)
+      requested_upper <- as.numeric(ev$upper)
+effective_upper <- requested_upper
 
       rows[[length(rows)+1L]] <- fbc_make_bound37v2(
         "employee_billable_hours",
