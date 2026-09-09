@@ -8,12 +8,14 @@
 
 `%||%` <- function(a,b) if(is.null(a) || length(a)==0L) b else a
 
-fbc_source40 <- function(file){
-  if(!file.exists(file)) stop("Required FBC module missing: ", file)
-  source(file, local=.GlobalEnv)
+fbc_source40 <- function(file, envir){
+  if(!file.exists(file))
+    stop("Required FBC module missing: ", file)
+
+  source(file, local=envir)
 }
 
-fbc_load_modules40 <- function(root=getwd()){
+fbc_load_modules40 <- function(root=getwd(), envir){
   mods <- c(
     "09_finanzierung_inputs_costs_FINAL.R",
     "10_gesamtkosten_kapitaldienst.R",
@@ -31,7 +33,13 @@ fbc_load_modules40 <- function(root=getwd()){
     "38_production_decision_pipeline.R"
   )
   
-  invisible(lapply(file.path(root, mods), fbc_source40))
+  invisible(
+  lapply(
+    file.path(root, mods),
+    fbc_source40,
+    envir = envir
+  )
+)
 }
 
 fbc_state_from_solution40 <- function(base_state, problem, solution){
@@ -161,9 +169,16 @@ fbc_business_break_even40 <- function(
 }
 
 fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
-  
-  fbc_load_modules40(root)
-  
+
+  stage <- "load_modules"
+
+  tryCatch({
+
+    fbc_load_modules40(
+  root,
+  envir = environment()
+)
+  stage <- "18_build_state"
   state <- build_cockpit_decision_state18(
     owner = cfg$owner,
     operating_costs = cfg$operating_costs,
@@ -173,6 +188,9 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
     employee_holiday_days = cfg$employee_holiday_days,
     employer_addon_rate = cfg$employer_addon_rate
   )
+  
+  state$legal_form <- cfg$legal_form %||% "freelance"
+state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
   
   # factual billable hours from Cockpit
   state$owner$physical_available_hours_month <- state$owner$available_hours_month
@@ -201,7 +219,14 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
   else 0
   
   state_rules <- state
-  
+  # Explicit factual billable-hours contract for production rules 37.
+# In the decision state these hours are held in available_hours_month,
+# while rules37 expects billable_hours_month as the factual baseline.
+state_rules$owner$billable_hours_month <-
+  state$owner$available_hours_month
+
+state_rules$employee$billable_hours_month <-
+  state$employee$available_hours_month
   state_rules$employee$contract_hours_week <-
     cfg$employee$contract_hours_week %||% cfg$employee$hours_week
   
@@ -214,7 +239,7 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
     if(cfg$employee$days_week > 0)
       cfg$employee$hours_week / cfg$employee$days_week
   else NA_real_
-  
+  stage <- "37_production_rules"
   prod_rules <- fbc_build_production_rules37v2(
     state = state_rules,
     confirmed = cfg$confirmed_bounds,
@@ -235,7 +260,7 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
   
   if(!length(owner_hours_max))
     owner_hours_max <- state$owner$available_hours_month
-  
+  stage <- "19_reality"
   reality <- build_reality_constraints19(
     state = state,
     cost_controls = cc,
@@ -245,7 +270,7 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
     financing_alternative = NULL,
     min_debt_service_ratio = NULL
   )
-  
+  stage <- "21_influence"
   influence <- build_differential_influence21(
     state = state,
     reality = reality,
@@ -259,17 +284,22 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
     ]
     if(length(v)) as.numeric(v[1]) else NULL
   }
-  
+  stage <- "26_optimizer_problem"
   problem <- build_optimizer_problem26(
     state = state,
     reality = reality,
     influence = influence,
-    objective_mode = cfg$objective_mode %||% "reach_income_target",
+    objective_mode =
+  if(identical(cfg$objective_mode %||% "", "reduce_owner_work"))
+    "reduce_owner_work"
+  else
+    "reach_income_target",
     desired_net = cfg$desired_net %||% state$owner$monthly_target,
     
     confirmed_bounds = list(
-      owner_price_max = get_upper("owner_price")
-    ),
+  owner_price_max = get_upper("owner_price"),
+  owner_hours_max = get_upper("owner_hours")
+),
     
     employee_bounds = list(
       customer_price_max = get_upper("employee_customer_price"),
@@ -279,18 +309,322 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
     owner_pension_month = cfg$owner_pension_month %||% 0,
     tax_month = cfg$tax_month %||% 0
   )
-  
+  stage <- "fast_candidate_search"
   fast <- run_fbc_fast_candidate_search(
     problem = problem,
     max_actions = cfg$max_actions %||% nrow(problem$registry),
     verbose = isTRUE(cfg$verbose)
   )
   
-  if(!isTRUE(fast$feasible) || !length(fast$candidate_pool))
+ if(!isTRUE(fast$feasible) || !length(fast$candidate_pool)){
+
+  # No target-feasible KKT solution exists within the confirmed real-world
+  # bounds. This is an economic result, not a technical backend failure.
+  best <- fbc_fast_best_corner(problem)
+
+  if(!is.finite(best$net) || is.null(best$x))
     stop(
-      "No feasible KKT candidate pool: ",
+      "No feasible target solution and no valid best-attainable solution: ",
       fast$reason %||% "unknown reason"
     )
+
+  best_solution <- best$x
+  names(best_solution) <- problem$registry$name
+
+   metrics_error <- NULL
+
+best_metrics <- tryCatch(
+  fbc_fast_metrics(problem, best_solution),
+  error = function(e){
+    metrics_error <<- conditionMessage(e)
+    list()
+  }
+)
+  best_candidate <- list(
+    active_levers = problem$registry$name[
+      abs(best_solution - problem$registry$current) > 1e-6
+    ],
+    solution = best_solution,
+    projected_net = as.numeric(best$net),
+    metrics = best_metrics,
+    cardinality = sum(
+      abs(best_solution - problem$registry$current) > 1e-6
+    )
+  )
+
+  ip <- prod_rules$implementation_plan
+  ip <- ip[ip$lever %in% problem$registry$name,,drop=FALSE]
+
+missing_ip <- setdiff(
+  best_candidate$active_levers,
+  ip$lever
+)
+
+implementation_timing_error <-
+  if(length(missing_ip))
+    paste(
+      "Missing evidenced implementation timing for:",
+      paste(missing_ip, collapse=", ")
+    )
+  else NULL
+
+  monthly_eval <- function(solution, month){
+    problem$evaluate(solution)
+  }
+
+  be_eval <- function(solution){
+    s <- fbc_state_from_solution40(
+      state,
+      problem,
+      solution
+    )
+
+    fbc_business_break_even40(
+      s,
+      cfg$variable_cost_keys %||% character(),
+      cfg$employee_variable_cost_per_hour %||% 0
+    )
+  }
+
+  capital_eval <- function(solution){
+    s <- fbc_state_from_solution40(
+      state,
+      problem,
+      solution
+    )
+
+    cur <- calc_current_business_result19(
+      s,
+      owner_pension_month = cfg$owner_pension_month %||% 0,
+      tax_month = cfg$tax_month %||% 0
+    )
+
+    revenue <- cur$owner_revenue + cur$employee_revenue
+    ds <- calc_current_debt_capacity19(s, revenue)
+
+    list(
+      ratio = ds$debt_service_ratio,
+      ok = ds$debt_service_covered,
+      liquidity_after_debt_service =
+        ds$liquidity_after_debt_service
+    )
+  }
+
+stage <- "target_not_reachable_post_validation"
+
+validation_error <- NULL
+
+validation <- tryCatch(
+  fbc_validate_post_decision(
+    problem = problem,
+    candidate = best_candidate,
+    implementation_plan = ip,
+    horizon_months = cfg$horizon_months %||% 12,
+    post_target_months = cfg$post_target_months %||% 6,
+    monthly_evaluator = monthly_eval,
+    mc_evaluator = NULL,
+    break_even_evaluator = be_eval,
+    capital_service_evaluator = capital_eval,
+    min_target_probability = NULL,
+    min_debt_service_ratio = NULL
+  ),
+  error = function(e){
+    validation_error <<- conditionMessage(e)
+
+    list(
+      time_to_target_months = NA_real_,
+      implementation_months_max = NA_real_,
+      time_path = NULL,
+      post_target_stable = NA,
+      max_post_target_gap_eur = NA_real_,
+      business_break_even_margin_eur = NA_real_,
+      business_break_even_ok = NA,
+      employee_break_even_ok = NA,
+      capital_service_ratio = NA_real_,
+      capital_service_ok = NA
+    )
+  }
+)
+
+changes_error <- NULL
+
+changes <- tryCatch(
+  fbc_build_change_payload38(
+    problem,
+    best_candidate
+  ),
+  error = function(e){
+    changes_error <<- conditionMessage(e)
+    list()
+  }
+)
+
+stage <- "target_not_reachable_shapley"
+
+shapley_error <- NULL
+
+shapley <- tryCatch(
+  fbc_build_shapley_explanation38(
+    problem,
+    best_candidate,
+    shapley_exact27C
+  ),
+  error = function(e){
+    shapley_error <<- conditionMessage(e)
+
+    list(
+      available = FALSE,
+      sentence = NULL,
+      contributions = list()
+    )
+  }
+)
+
+  stage <- "target_not_reachable_break_even"
+
+break_even_error <- NULL
+
+be_detail <- tryCatch(
+  be_eval(best_solution),
+  error = function(e){
+    break_even_error <<- conditionMessage(e)
+    NULL
+  }
+)
+
+  current_net <- as.numeric(
+    problem$evaluate(problem$registry$current)
+  )
+
+  target <- as.numeric(problem$desired_net)
+
+  remaining_gap <- max(
+    0,
+    target - as.numeric(best$net)
+  )
+
+  remaining_gap_pct <-
+    if(is.finite(target) && target > 0)
+      100 * remaining_gap / target
+    else NA_real_
+
+  payload <- list(
+    schema_version = "fbc_decision_payload_v1",
+
+    status = "target_not_reachable",
+
+    current = list(
+      expected_net = current_net,
+      monthly_target = target,
+      target_gap_eur = max(0, target - current_net),
+      target_gap_percent =
+        if(is.finite(target) && target > 0)
+          100 * max(0, target - current_net) / target
+        else NA_real_
+    ),
+
+    recommendation = list(
+      candidate_id = NULL,
+      active_levers = best_candidate$active_levers,
+      changes = changes,
+      projected_net = as.numeric(best$net),
+      target_reached = FALSE,
+      remaining_gap_eur = remaining_gap,
+      remaining_gap_percent = remaining_gap_pct,
+      explanation = shapley
+    ),
+
+    target_path = list(
+      time_to_target_months =
+        validation$time_to_target_months,
+      target_reached_within_horizon = FALSE,
+      implementation_months_max =
+        validation$implementation_months_max,
+      path = validation$time_path
+    ),
+
+    post_decision = list(
+      post_target_stable =
+        validation$post_target_stable,
+      max_post_target_gap_eur =
+        validation$max_post_target_gap_eur,
+      mc_target_probability = NULL,
+      mc_policy_ok = NULL,
+      business_break_even_margin_eur =
+        validation$business_break_even_margin_eur,
+      business_break_even_ok =
+        validation$business_break_even_ok,
+      employee_break_even_ok =
+        validation$employee_break_even_ok,
+      capital_service_ratio =
+        validation$capital_service_ratio,
+      capital_service_ok =
+        validation$capital_service_ok
+    ),
+
+    break_even = be_detail,
+
+    robustness = list(
+      target_probability = NULL,
+      p10 = NULL,
+      p50 = NULL,
+      p90 = NULL
+    ),
+
+    production_meta = list(
+      input_schema = cfg$schema_version,
+      backend = "FBC_R_BACKEND_P1_DETERMINISTIC_1.0",
+      candidate_count = 0,
+      optimizer_levers =
+        as.list(problem$registry$name),
+      financing_separate = TRUE,
+      target_feasible = FALSE,
+      best_attainable_used = TRUE
+    ),
+
+audit = list(
+  path = "P1_DETERMINISTIC_TARGET_NOT_REACHABLE",
+  mc_executed = FALSE,
+  optimizer_executed = TRUE,
+  demand_guard =
+    "free capacity is not treated as demand",
+
+  auxiliary_analysis = list(
+    implementation_timing_ok =
+      is.null(implementation_timing_error),
+    implementation_timing_error =
+      implementation_timing_error,
+    
+    metrics_ok =
+  is.null(metrics_error),
+metrics_error =
+  metrics_error,
+
+    post_validation_ok =
+      is.null(validation_error),
+    post_validation_error =
+      validation_error,
+
+    changes_ok =
+      is.null(changes_error),
+    changes_error =
+      changes_error,
+
+    shapley_ok =
+      is.null(shapley_error),
+    shapley_error =
+      shapley_error,
+
+    break_even_ok =
+      is.null(break_even_error),
+    break_even_error =
+      break_even_error
+  )
+)
+  )
+
+  return(payload)
+}
   
   ip <- prod_rules$implementation_plan
   ip <- ip[ip$lever %in% problem$registry$name,,drop=FALSE]
@@ -355,7 +689,7 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
     one_time_fee = cfg$financing$one_time_fee %||% 0,
     binding = cfg$financing$binding %||% NA_character_
   )
-  
+  stage <- "38_production_decision"
   result <- fbc_run_production_decision38(
     problem = problem,
     candidate_pool = fast$candidate_pool,
@@ -425,6 +759,17 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
       "free capacity is not treated as demand"
   )
   
-  payload
+     payload
+
+  }, error=function(e){
+    stop(
+      sprintf(
+        "[P1 stage=%s] %s",
+        stage,
+        conditionMessage(e)
+      ),
+      call. = FALSE
+    )
+  })
 }
 
