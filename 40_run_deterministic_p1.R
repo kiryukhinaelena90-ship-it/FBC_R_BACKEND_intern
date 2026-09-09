@@ -594,6 +594,11 @@ audit = list(
       is.null(implementation_timing_error),
     implementation_timing_error =
       implementation_timing_error,
+    
+    metrics_ok =
+  is.null(metrics_error),
+metrics_error =
+  metrics_error,
 
     post_validation_ok =
       is.null(validation_error),
