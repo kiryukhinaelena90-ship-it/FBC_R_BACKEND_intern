@@ -49,17 +49,20 @@ build_optimizer_problem26 <- function(
             confirmed_bounds$owner_price_max)
   }
 
- # Owner hours: confirmed sellable-hours bound must never exceed
-# the factual physical capacity preserved by runner 40.
+# Owner hours only if explicitly confirmed.
 cur_h <- state$owner$available_hours_month
 
-owner_h_max <- as.numeric(
-  reality$bounds$owner_hours_month_max
-)
-if (objective_mode=="reduce_owner_work") {
-  add_var("owner_hours", cur_h, 0, cur_h)
-} else if (is.finite(owner_h_max) && owner_h_max > cur_h) {
-  add_var("owner_hours", cur_h, cur_h, owner_h_max)
+if (
+  !is.null(confirmed_bounds$owner_hours_max) &&
+  is.finite(confirmed_bounds$owner_hours_max) &&
+  confirmed_bounds$owner_hours_max > cur_h
+) {
+  add_var(
+    "owner_hours",
+    cur_h,
+    cur_h,
+    confirmed_bounds$owner_hours_max
+  )
 }
 
   # Confirmed operating-cost bounds only.
