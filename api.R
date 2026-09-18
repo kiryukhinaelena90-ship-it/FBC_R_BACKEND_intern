@@ -481,7 +481,7 @@ fbc_p0_payload <- function(cfg){
   list(
   schema_version="fbc_decision_payload_v1",
   status="no_evidenced_lever",
-sensitivity = fbc_sensitivity_payload(state, cfg),
+
   sensitivity =
     fbc_sensitivity_payload(
       state,
