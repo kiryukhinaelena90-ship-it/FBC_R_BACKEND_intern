@@ -655,13 +655,21 @@ source(
 
 tryCatch(
   {
-    payload <- fbc_run_p1_mc_fazit_43(
-      cfg = runner_cfg,
-      root = ROOT,
-      mc_file = runner_cfg$mc_file
-    )
+payload <- fbc_run_p1_mc_fazit_43(
+  cfg = runner_cfg,
+  root = ROOT,
+  mc_file = runner_cfg$mc_file
+)
 
-    return(payload)
+# Sensitivity remains based on the factual current state,
+# not on the optimized recommendation.
+payload$sensitivity <-
+  fbc_sensitivity_payload(
+    fbc_build_factual_state(cfg),
+    cfg
+  )
+
+return(payload)
   },
     error = function(e){
       res$status <- 500
