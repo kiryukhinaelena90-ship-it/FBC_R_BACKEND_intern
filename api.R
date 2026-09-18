@@ -479,9 +479,16 @@ fbc_p0_payload <- function(cfg){
   dscr <- if(is.finite(ds) && ds>0) free_before_ds/ds else NULL
 
   list(
-    schema_version="fbc_decision_payload_v1",
-    status="no_evidenced_lever",
-    current=list(
+  schema_version="fbc_decision_payload_v1",
+  status="no_evidenced_lever",
+
+  sensitivity =
+    fbc_sensitivity_payload(
+      state,
+      cfg
+    ),
+
+  current=list(
       expected_net=financial$net_available,
       monthly_target=target,
       target_gap_eur=gap,
