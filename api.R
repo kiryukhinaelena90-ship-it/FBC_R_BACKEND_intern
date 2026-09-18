@@ -139,7 +139,282 @@ fbc_build_factual_state <- function(cfg){
 
   state
 }
+# ============================================================
+# Sensitivity payload for Decision Support
+# Each factor is changed separately by 1%.
+# All other values remain unchanged.
+# This is diagnostic, not a recommendation.
+# ============================================================
 
+fbc_sensitivity_payload <- function(state, cfg){
+
+  eval_net <- function(
+      owner_price = state$owner$price,
+      owner_hours = state$owner$available_hours_month,
+      employee_price = state$employee$customer_price,
+      employee_hours = state$employee$available_hours_month,
+      operating_costs = state$operating_costs
+  ){
+
+    owner_revenue <-
+      owner_price * owner_hours
+
+    employee_revenue <-
+      if(isTRUE(state$employee$direct_billing)){
+        employee_price * employee_hours
+      } else {
+        0
+      }
+
+    result_before_owner_protection_tax <-
+      owner_revenue +
+      employee_revenue -
+      sum(operating_costs) -
+      state$employee$personnel_cost_month -
+      state$financing$interest_plus_fees_month
+
+    financial <- fbc_financial_point24(
+      result_before_owner_protection_tax,
+      state$owner,
+      legal_form =
+        as.character(
+          cfg$legal_form %||% "freelance"
+        ),
+      trade_tax_rate =
+        num1(cfg$trade_tax_rate)
+    )
+
+    as.numeric(financial$net_available)
+  }
+
+
+  base_net <- eval_net()
+
+
+  make_row <- function(
+      lever,
+      label,
+      changed_net,
+      perturbation_pct,
+      current
+  ){
+
+    delta_net <-
+      changed_net - base_net
+
+    delta_pct <-
+      if(
+        is.finite(base_net) &&
+        abs(base_net) > 1e-9
+      ){
+        100 * delta_net / abs(base_net)
+      } else {
+        NA_real_
+      }
+
+    list(
+      lever = lever,
+      label = label,
+
+      current =
+        as.numeric(current),
+
+      perturbation_pct =
+        as.numeric(perturbation_pct),
+
+      net_change_eur =
+        as.numeric(delta_net),
+
+      net_change_pct =
+        if(is.finite(delta_pct))
+          as.numeric(delta_pct)
+        else
+          NULL
+    )
+  }
+
+
+  rows <- list()
+
+
+  # ----------------------------------------------------------
+  # 1. Owner price +1 %
+  # ----------------------------------------------------------
+
+  rows[[length(rows) + 1L]] <-
+    make_row(
+      lever = "owner_price",
+      label = "Inhaberpreis",
+
+      changed_net =
+        eval_net(
+          owner_price =
+            state$owner$price * 1.01
+        ),
+
+      perturbation_pct = 1,
+
+      current =
+        state$owner$price
+    )
+
+
+  # ----------------------------------------------------------
+  # 2. Owner billable hours +1 %
+  # ----------------------------------------------------------
+
+  rows[[length(rows) + 1L]] <-
+    make_row(
+      lever = "owner_hours",
+      label = "Abrechenbare Inhaberstunden",
+
+      changed_net =
+        eval_net(
+          owner_hours =
+            state$owner$available_hours_month * 1.01
+        ),
+
+      perturbation_pct = 1,
+
+      current =
+        state$owner$available_hours_month
+    )
+
+
+  # ----------------------------------------------------------
+  # 3–4. Employee only if directly billed
+  # ----------------------------------------------------------
+
+  if(isTRUE(state$employee$direct_billing)){
+
+    rows[[length(rows) + 1L]] <-
+      make_row(
+        lever = "employee_customer_price",
+        label = "Mitarbeiter-Kundenpreis",
+
+        changed_net =
+          eval_net(
+            employee_price =
+              state$employee$customer_price * 1.01
+          ),
+
+        perturbation_pct = 1,
+
+        current =
+          state$employee$customer_price
+      )
+
+
+    rows[[length(rows) + 1L]] <-
+      make_row(
+        lever = "employee_billable_hours",
+        label = "Abrechenbare Mitarbeiterstunden",
+
+        changed_net =
+          eval_net(
+            employee_hours =
+              state$employee$available_hours_month * 1.01
+          ),
+
+        perturbation_pct = 1,
+
+        current =
+          state$employee$available_hours_month
+      )
+  }
+
+
+  # ----------------------------------------------------------
+  # 5. Total operating costs −1 %
+  # ----------------------------------------------------------
+
+  rows[[length(rows) + 1L]] <-
+    make_row(
+      lever = "operating_costs",
+      label = "Betriebskosten gesamt",
+
+      changed_net =
+        eval_net(
+          operating_costs =
+            state$operating_costs * 0.99
+        ),
+
+      perturbation_pct = -1,
+
+      current =
+        sum(state$operating_costs)
+    )
+
+
+  # ----------------------------------------------------------
+  # Dominant factor
+  # ----------------------------------------------------------
+
+  effects <-
+    vapply(
+      rows,
+      function(x){
+
+        z <- suppressWarnings(
+          as.numeric(
+            x$net_change_pct %||% NA_real_
+          )
+        )
+
+        if(is.finite(z))
+          abs(z)
+        else
+          0
+      },
+      numeric(1)
+    )
+
+
+  dominant_index <-
+    if(length(effects))
+      which.max(effects)
+    else
+      integer(0)
+
+
+  dominant_lever <-
+    if(length(dominant_index))
+      rows[[dominant_index]]$lever
+    else
+      NULL
+
+
+  dominant_label <-
+    if(length(dominant_index))
+      rows[[dominant_index]]$label
+    else
+      NULL
+
+
+  list(
+    method =
+      "local_1pct_financial_sensitivity",
+
+    base_net =
+      as.numeric(base_net),
+
+    local =
+      rows,
+
+    dominant_lever =
+      dominant_lever,
+
+    dominant_label =
+      dominant_label,
+
+    note =
+      paste(
+        "Each factor is changed separately by 1 percent.",
+        "All other values remain unchanged.",
+        "This analysis is diagnostic and is not an automatic recommendation."
+      )
+  )
+}
 fbc_current_financing_payload <- function(state){
   if(!isTRUE(state$financing$active)){
     return(list(status="no_financing",current=NULL,alternative=NULL,comparison=NULL))
