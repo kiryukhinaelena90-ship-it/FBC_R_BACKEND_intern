@@ -176,6 +176,7 @@ if (
     time_to_target_months=tp$time_to_target_months,
     target_reached_within_horizon=tp$target_reached_within_horizon,
     implementation_months_max=tp$implementation_months_max,
+    liquidity_bridge_need_eur=liquidity_bridge_need_eur,
     post_target_stable=post_stable,
     max_post_target_gap_eur=max_post_gap,
     mc_target_probability=mc_prob,
