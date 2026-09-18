@@ -106,7 +106,20 @@ fbc_validate_post_decision <- function(
   tp <- fbc_build_time_path(
     problem,candidate,implementation_plan,horizon_months,monthly_evaluator
   )
+liquidity_bridge_need_eur <- 0
 
+if (
+  is.data.frame(tp$path) &&
+  nrow(tp$path) > 0 &&
+  "gap" %in% names(tp$path)
+) {
+  gaps <- as.numeric(tp$path$gap)
+  gaps <- gaps[is.finite(gaps) & gaps > 0]
+
+  if (length(gaps)) {
+    liquidity_bridge_need_eur <- sum(gaps)
+  }
+}
   if(length(post_target_months)!=1 || !is.finite(post_target_months) || post_target_months<0)
     stop("post_target_months muss explizit >= 0 gesetzt werden.")
   post_target_months <- as.integer(post_target_months)
