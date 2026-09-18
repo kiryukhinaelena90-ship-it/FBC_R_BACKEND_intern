@@ -508,6 +508,7 @@ fbc_p0_payload <- function(cfg){
       time_to_target_months=NULL,
       target_reached_within_horizon=(gap<=1e-9),
       implementation_months_max=NULL,
+      liquidity_bridge_need_eur=if(gap>0) gap else 0,
       path=list()
     ),
     post_decision=list(
