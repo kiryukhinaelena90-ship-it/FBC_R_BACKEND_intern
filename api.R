@@ -664,13 +664,7 @@ payload$sensitivity <- fbc_sensitivity_payload(
   fbc_build_factual_state(cfg),
   cfg
 )
-# Sensitivity remains based on the factual current state,
-# not on the optimized recommendation.
-payload$sensitivity <-
-  fbc_sensitivity_payload(
-    fbc_build_factual_state(cfg),
-    cfg
-  )
+
 
 return(payload)
   },
