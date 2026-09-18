@@ -294,7 +294,7 @@ target_path=list(
   target_reached_within_horizon=val$target_reached_within_horizon,
   implementation_months_max=val$implementation_months_max,
   liquidity_bridge_need_eur=val$liquidity_bridge_need_eur,
-  implementation_months_max=val$implementation_months_max,
+ 
   path=val$time_path
 ),
     post_decision=list(
