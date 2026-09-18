@@ -186,7 +186,7 @@ if (
     employee_break_even_ok=emp_be_ok,
     capital_service_ratio=ds_ratio,
     capital_service_ok=ds_ok
-    liquidity_bridge_need_eur=liquidity_bridge_need_eur,
+  
   )
 }
 
