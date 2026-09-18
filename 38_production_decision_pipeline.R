@@ -289,12 +289,13 @@ fbc_make_decision_payload38 <- function(
       projected_net=as.numeric(selected$projected_net),
       explanation=sh
     ),
-    target_path=list(
-      time_to_target_months=val$time_to_target_months,
-      target_reached_within_horizon=val$target_reached_within_horizon,
-      implementation_months_max=val$implementation_months_max,
-      path=val$time_path
-    ),
+target_path=list(
+  time_to_target_months=val$time_to_target_months,
+  target_reached_within_horizon=val$target_reached_within_horizon,
+  implementation_months_max=val$implementation_months_max,
+  liquidity_bridge_need_eur=val$liquidity_bridge_need_eur,
+  path=val$time_path
+),
     post_decision=list(
       post_target_stable=val$post_target_stable,
       max_post_target_gap_eur=val$max_post_target_gap_eur,
