@@ -561,7 +561,7 @@ target_path = list(
 
     break_even = be_detail,
 
-    financing = fin_payload,
+
 
     robustness = list(
       target_probability = NULL,
