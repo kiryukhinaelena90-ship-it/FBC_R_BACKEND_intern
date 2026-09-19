@@ -69,8 +69,18 @@ fbc_map_costs <- function(x){
 
 fbc_map_financing <- function(x){
   type <- as.character(x$type %||% "annuity")
-  if(identical(type,"amortizing")) type <- "amortizing"
-  if(!type %in% c("annuity","amortizing")) type <- "annuity"
+
+  type_map <- c(
+    annuity="annuity",
+    tilgung="tilgung",
+    bullet="endfaellig",
+    line="credit_line",
+    zero="zinsfrei"
+  )
+
+  if(!type %in% names(type_map)) type <- "annuity"
+  type <- unname(type_map[[type]])
+
   list(
     active=flag1(x$active),
     type=type,
