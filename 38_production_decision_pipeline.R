@@ -275,7 +275,11 @@ fbc_make_decision_payload38 <- function(
 
   list(
     schema_version=schema_version,
-    status="recommendation_selected",
+    status =
+  if(current_net >= target && !length(changes))
+    "target_already_reached"
+  else
+    "recommendation_selected",
     current=list(
       expected_net=current_net,
       monthly_target=target,
