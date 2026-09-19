@@ -584,7 +584,242 @@ target_path = list(
     ),
 
     break_even = be_detail,
+все работает кроме finanzierung 
+index (7)(4).html
+Файл
+проверь
+index (8)(5).html
+Файл
+index (9)(4).html
+Файл
+вот эти блоки не считают
 
+Да. Делаем две правки в index (9)(4).html.
+
+Первая — около строки 5544, сразу после:
+
+const errors=[];
+
+вставь:
+
+if(direct && bill <= 0){
+  errors.push(
+    T(
+      'Bitte geben Sie die tatsächlich an Kunden abrechenbaren Mitarbeiterstunden pro Monat ein.',
+      'Укажите фактические часы сотрудника в месяц, которые выставляются клиенту.'
+    )
+  );
+}
+
+То есть получится:
+
+const errors=[];
+
+if(direct && bill <= 0){
+  errors.push(
+    T(
+      'Bitte geben Sie die tatsächlich an Kunden abrechenbaren Mitarbeiterstunden pro Monat ein.',
+      'Укажите фактические часы сотрудника в месяц, которые выставляются клиенту.'
+    )
+  );
+}
+
+if(o.billable_hours_month > o.available_hours_month + 1e-9){
+  errors.push('owner_billable_exceeds_available');
+}
+
+buildConfig() у тебя уже останавливает расчёт, если s.errors.length > 0, поэтому больше отдельный запрет добавлять не нужно.
+
+Вторая правка — около строки 5923. Сейчас:
+
+const showEmployee=(empApplicable!==false) && Number.isFinite(empHours) && Number.isFinite(empBE);
+
+замени полностью на:
+
+const showEmployee=
+  empApplicable === true &&
+  Number.isFinite(empHours) &&
+  Number.isFinite(empBE);
+
+Весь кусок будет:
+
+const empApplicable=get(p,'break_even.employee.applicable');
+const empOk=get(p,'break_even.employee.ok') ?? get(p,'post_decision.employee_break_even_ok');
+const empHours=Number(get(p,'break_even.employee.billable_hours'));
+const empBE=Number(get(p,'break_even.employee.break_even_hours'));
+const empSection=$('fbcEmployeeEconomicsSection');
+
+if(empSection){
+  const showEmployee=
+    empApplicable === true &&
+    Number.isFinite(empHours) &&
+    Number.isFinite(empBE);
+
+  empSection.hidden=!showEmployee;
+
+После этого логика будет такая:
+
+галочка снята → сотрудник внутренний → блок Personalwirtschaftliche Einordnung вообще не показывается.
+
+галочка стоит + часы введены → считаем break-even сотрудника.
+
+галочка стоит + часы 0/пустые → R-анализ не запускается, пользователь получает понятное сообщение.
+
+Это как раз то поведение, которое нам нужно.
+
+дальше
+
+Дальше — Monte Carlo, потому что именно он у тебя на скрине остаётся пустым.
+
+Сейчас frontend делает так: если backend вернул robustness.available !== true, весь внутренний блок просто скрывается. Поэтому мы даже не видим причину ошибки.
+
+В index (9)(4).html около строки 6048 найди:
+
+const robustness = get(p,'robustness') || {};
+const mcAvailable = robustness?.available === true;
+
+if($('fbcRMonteCarlo')){
+  $('fbcRMonteCarlo').hidden = !mcAvailable;
+
+  if(mcAvailable){
+
+Замени начало этого блока на:
+
+const robustness = get(p,'robustness') || {};
+const mcAvailable = robustness?.available === true;
+const mcReason =
+  robustness?.reason ??
+  get(p,'audit.mc_error') ??
+  null;
+
+if($('fbcRMonteCarlo')){
+  $('fbcRMonteCarlo').hidden = false;
+
+  if(mcAvailable){
+
+А после существующего:
+
+$('fbcMCP90').textContent =
+  p90 == null ? '—' : money(p90);
+
+перед закрывающей } добавь else:
+
+  } else {
+
+    $('fbcMCProbability').textContent = '—';
+    $('fbcMCP10').textContent = '—';
+    $('fbcMCP50').textContent = '—';
+    $('fbcMCP90').textContent = '—';
+
+    const note = $('fbcRMonteCarlo')?.querySelector('.fbc-r-note');
+
+    if(note && mcReason){
+      note.textContent = T(
+        `Monte-Carlo-Berechnung konnte nicht ausgeführt werden: ${mcReason}`,
+        `Расчёт Monte Carlo не выполнен: ${mcReason}`
+      );
+    }
+  }
+
+То есть весь кусок станет примерно таким:
+
+const robustness = get(p,'robustness') || {};
+const mcAvailable = robustness?.available === true;
+const mcReason =
+  robustness?.reason ??
+  get(p,'audit.mc_error') ??
+  null;
+
+if($('fbcRMonteCarlo')){
+  $('fbcRMonteCarlo').hidden = false;
+
+  if(mcAvailable){
+    const p10 = robustness.p10;
+    const p50 = robustness.p50;
+    const p90 = robustness.p90;
+    const probability = robustness.target_probability;
+
+    $('fbcMCProbability').textContent =
+      probability == null ? '—' : pct(probability);
+
+    $('fbcMCP10').textContent =
+      p10 == null ? '—' : money(p10);
+
+    $('fbcMCP50').textContent =
+      p50 == null ? '—' : money(p50);
+
+    $('fbcMCP90').textContent =
+      p90 == null ? '—' : money(p90);
+
+  } else {
+
+    $('fbcMCProbability').textContent = '—';
+    $('fbcMCP10').textContent = '—';
+    $('fbcMCP50').textContent = '—';
+    $('fbcMCP90').textContent = '—';
+
+    const note = $('fbcRMonteCarlo')?.querySelector('.fbc-r-note');
+
+    if(note && mcReason){
+      note.textContent = T(
+        `Monte-Carlo-Berechnung konnte nicht ausgeführt werden: ${mcReason}`,
+        `Расчёт Monte Carlo не выполнен: ${mcReason}`
+      );
+    }
+  }
+}
+
+Почему сейчас это важно: я проверила backend — файл
+
+data/processed/fbc_monte_carlo_draws.csv
+
+реально есть в GitHub, и в нём есть нужные колонки energie_aenderung_prozent, kraftstoff_aenderung_prozent, arbeitskosten_aenderung_prozent и т. д. То есть проблема уже не в отсутствии самого MC-файла.
+
+После этой правки запускаем расчёт ещё раз — и вместо пустого блока мы увидим точную причину, почему 41_post_p1_monte_carlo.R возвращает available = FALSE. Тогда исправим уже сам расчёт, а не будем гадать.
+
+дальше
+
+Дальше — ещё один баг финансирования в 40_run_deterministic_p1.R. В ветке target_not_reachable сейчас payload вообще не содержит financing, поэтому после нажатия Finanzierung berechnen результат кредита может просто потеряться.
+
+В этом же файле найди место перед:
+
+payload <- list(
+
+и вставь:
+
+current_fin_contract <- list(
+  active = isTRUE(cfg$financing$active),
+  type = cfg$financing$type,
+  amount = cfg$financing$amount,
+  rate_pa = cfg$financing$rate_pa,
+  months = cfg$financing$months,
+  fees_month = cfg$financing$fees_month %||% 0,
+  one_time_fee = cfg$financing$one_time_fee %||% 0,
+  binding = cfg$financing$binding %||% NA_character_
+)
+
+fin_payload <- fbc_build_financing_branch38(
+  current_financing = current_fin_contract,
+  financing_alternative = NULL,
+  comparison_horizon_months = cfg$financing$months,
+  free_cash_before_debt_service_month = NULL,
+  min_debt_service_ratio = NULL,
+  market_context = NULL
+)
+
+Потом внутри самого:
+
+payload <- list(
+
+найди:
+
+break_even = be_detail,
+
+robustness = list(
+
+и между ними вставь:
+
+financing = fin_payload,
     robustness = list(
       target_probability = NULL,
       p10 = NULL,
