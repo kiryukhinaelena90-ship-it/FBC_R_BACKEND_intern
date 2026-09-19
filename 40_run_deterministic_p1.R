@@ -534,14 +534,16 @@ be_detail <- tryCatch(
       explanation = shapley
     ),
 
-    target_path = list(
-      time_to_target_months =
-        validation$time_to_target_months,
-      target_reached_within_horizon = FALSE,
-      implementation_months_max =
-        validation$implementation_months_max,
-      path = validation$time_path
-    ),
+target_path = list(
+  time_to_target_months =
+    validation$time_to_target_months,
+  target_reached_within_horizon = FALSE,
+  implementation_months_max =
+    validation$implementation_months_max,
+  liquidity_bridge_need_eur =
+    validation$liquidity_bridge_need_eur %||% 0,
+  path = validation$time_path
+),
 
     post_decision = list(
       post_target_stable =
