@@ -431,18 +431,19 @@ validation <- tryCatch(
   error = function(e){
     validation_error <<- conditionMessage(e)
 
-    list(
-      time_to_target_months = NA_real_,
-      implementation_months_max = NA_real_,
-      time_path = NULL,
-      post_target_stable = NA,
-      max_post_target_gap_eur = NA_real_,
-      business_break_even_margin_eur = NA_real_,
-      business_break_even_ok = NA,
-      employee_break_even_ok = NA,
-      capital_service_ratio = NA_real_,
-      capital_service_ok = NA
-    )
+list(
+  time_to_target_months = NA_real_,
+  implementation_months_max = NA_real_,
+  liquidity_bridge_need_eur = 0,
+  time_path = NULL,
+  post_target_stable = NA,
+  max_post_target_gap_eur = NA_real_,
+  business_break_even_margin_eur = NA_real_,
+  business_break_even_ok = NA,
+  employee_break_even_ok = NA,
+  capital_service_ratio = NA_real_,
+  capital_service_ok = NA
+)
   }
 )
 
