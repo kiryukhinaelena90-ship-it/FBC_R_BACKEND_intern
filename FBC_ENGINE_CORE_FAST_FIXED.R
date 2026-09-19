@@ -337,14 +337,16 @@ run_fbc_fast_candidate_search <- function(
       full_sol<-fbc_fast_expand_solution(problem,sol$solution)
       if(problem$evaluate(full_sol)+1e-5 < problem$desired_net) next
 
-      cand<-list(
-        active_levers=s,
-        reduced_solution=sol,
-        solution=full_sol,
-        projected_net=problem$evaluate(full_sol),
-        metrics=fbc_fast_metrics(problem,full_sol),
-        cardinality=k
-      )
+metrics <- fbc_fast_metrics(problem, full_sol)
+
+cand <- list(
+  active_levers = metrics$changed,
+  reduced_solution = sol,
+  solution = full_sol,
+  projected_net = problem$evaluate(full_sol),
+  metrics = metrics,
+  cardinality = length(metrics$changed)
+)
       feasible_this_k[[length(feasible_this_k)+1]]<-cand
       pool[[length(pool)+1]]<-cand
     }
