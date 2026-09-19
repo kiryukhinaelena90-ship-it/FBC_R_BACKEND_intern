@@ -559,24 +559,71 @@ target_path = list(
 ),
 
     post_decision = list(
-      post_target_stable =
-        validation$post_target_stable,
-      max_post_target_gap_eur =
-        validation$max_post_target_gap_eur,
-      mc_target_probability = NULL,
-      mc_policy_ok = NULL,
-      business_break_even_margin_eur =
-        validation$business_break_even_margin_eur,
-      business_break_even_ok =
-        validation$business_break_even_ok,
-      employee_break_even_ok =
-        validation$employee_break_even_ok,
-      capital_service_ratio =
-        validation$capital_service_ratio,
-      capital_service_ok =
-        validation$capital_service_ok
+          break_even = be_detail,
+
+    financing = fin_payload,
+
+    robustness = list(
+      target_probability = NULL,
+      p10 = NULL,
+      p50 = NULL,
+      p90 = NULL
     ),
 
+    production_meta = list(
+      input_schema = cfg$schema_version,
+      backend = "FBC_R_BACKEND_P1_DETERMINISTIC_1.0",
+      candidate_count = 0,
+      optimizer_levers =
+        as.list(problem$registry$name),
+      financing_separate = TRUE,
+      target_feasible = FALSE,
+      best_attainable_used = TRUE
+    ),
+
+    audit = list(
+      path = "P1_DETERMINISTIC_TARGET_NOT_REACHABLE",
+      mc_executed = FALSE,
+      optimizer_executed = TRUE,
+      demand_guard =
+        "free capacity is not treated as demand",
+
+      auxiliary_analysis = list(
+        implementation_timing_ok =
+          is.null(implementation_timing_error),
+        implementation_timing_error =
+          implementation_timing_error,
+
+        metrics_ok =
+          is.null(metrics_error),
+        metrics_error =
+          metrics_error,
+
+        post_validation_ok =
+          is.null(validation_error),
+        post_validation_error =
+          validation_error,
+
+        changes_ok =
+          is.null(changes_error),
+        changes_error =
+          changes_error,
+
+        shapley_ok =
+          is.null(shapley_error),
+        shapley_error =
+          shapley_error,
+
+        break_even_ok =
+          is.null(break_even_error),
+        break_even_error =
+          break_even_error
+      )
+    )
+  )
+
+  return(payload)
+}
    
   ip <- prod_rules$implementation_plan
   ip <- ip[ip$lever %in% problem$registry$name,,drop=FALSE]
