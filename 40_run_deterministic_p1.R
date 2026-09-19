@@ -584,23 +584,6 @@ target_path = list(
     ),
 
     break_even = be_detail,
-все работает кроме finanzierung 
-index (7)(4).html
-Файл
-проверь
-index (8)(5).html
-Файл
-index (9)(4).html
-Файл
-вот эти блоки не считают
-
-Да. Делаем две правки в index (9)(4).html.
-
-Первая — около строки 5544, сразу после:
-
-const errors=[];
-
-вставь:
 
 if(direct && bill <= 0){
   errors.push(
@@ -634,8 +617,6 @@ buildConfig() у тебя уже останавливает расчёт, есл
 
 const showEmployee=(empApplicable!==false) && Number.isFinite(empHours) && Number.isFinite(empBE);
 
-замени полностью на:
-
 const showEmployee=
   empApplicable === true &&
   Number.isFinite(empHours) &&
@@ -656,25 +637,6 @@ if(empSection){
     Number.isFinite(empBE);
 
   empSection.hidden=!showEmployee;
-
-После этого логика будет такая:
-
-галочка снята → сотрудник внутренний → блок Personalwirtschaftliche Einordnung вообще не показывается.
-
-галочка стоит + часы введены → считаем break-even сотрудника.
-
-галочка стоит + часы 0/пустые → R-анализ не запускается, пользователь получает понятное сообщение.
-
-Это как раз то поведение, которое нам нужно.
-
-дальше
-
-Дальше — Monte Carlo, потому что именно он у тебя на скрине остаётся пустым.
-
-Сейчас frontend делает так: если backend вернул robustness.available !== true, весь внутренний блок просто скрывается. Поэтому мы даже не видим причину ошибки.
-
-В index (9)(4).html около строки 6048 найди:
-
 const robustness = get(p,'robustness') || {};
 const mcAvailable = robustness?.available === true;
 
@@ -682,8 +644,6 @@ if($('fbcRMonteCarlo')){
   $('fbcRMonteCarlo').hidden = !mcAvailable;
 
   if(mcAvailable){
-
-Замени начало этого блока на:
 
 const robustness = get(p,'robustness') || {};
 const mcAvailable = robustness?.available === true;
@@ -696,13 +656,6 @@ if($('fbcRMonteCarlo')){
   $('fbcRMonteCarlo').hidden = false;
 
   if(mcAvailable){
-
-А после существующего:
-
-$('fbcMCP90').textContent =
-  p90 == null ? '—' : money(p90);
-
-перед закрывающей } добавь else:
 
   } else {
 
@@ -769,23 +722,10 @@ if($('fbcRMonteCarlo')){
   }
 }
 
-Почему сейчас это важно: я проверила backend — файл
 
-data/processed/fbc_monte_carlo_draws.csv
-
-реально есть в GitHub, и в нём есть нужные колонки energie_aenderung_prozent, kraftstoff_aenderung_prozent, arbeitskosten_aenderung_prozent и т. д. То есть проблема уже не в отсутствии самого MC-файла.
-
-После этой правки запускаем расчёт ещё раз — и вместо пустого блока мы увидим точную причину, почему 41_post_p1_monte_carlo.R возвращает available = FALSE. Тогда исправим уже сам расчёт, а не будем гадать.
-
-дальше
-
-Дальше — ещё один баг финансирования в 40_run_deterministic_p1.R. В ветке target_not_reachable сейчас payload вообще не содержит financing, поэтому после нажатия Finanzierung berechnen результат кредита может просто потеряться.
-
-В этом же файле найди место перед:
 
 payload <- list(
 
-и вставь:
 
 current_fin_contract <- list(
   active = isTRUE(cfg$financing$active),
