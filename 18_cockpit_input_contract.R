@@ -150,7 +150,13 @@ calc_employee_economics_v16 <- function(
 
 calc_financing_split_v16 <- function(
     active = FALSE,
-    type = c("annuity", "amortizing"),
+    type = c(
+      "annuity",
+      "tilgung",
+      "endfaellig",
+      "credit_line",
+      "zinsfrei"
+    ),
     amount = 0,
     rate_pa = 0,
     months = 36,
@@ -163,43 +169,82 @@ calc_financing_split_v16 <- function(
   if (!isTRUE(active)) {
     return(list(
       active = FALSE,
+      type = type,
       interest_plus_fees_month = 0,
       principal_month = 0,
       debt_service_month = 0,
       rate_pa = 0,
       amount = 0,
+      months = months,
+      fees_month = 0,
       binding = binding
     ))
   }
 
   assert_num18(amount, "amount", 0)
   assert_num18(rate_pa, "rate_pa", 0)
-  assert_num18(months, "months", 1)
   assert_num18(fees_month, "fees_month", 0)
+
+  if (type != "credit_line") {
+    assert_num18(months, "months", 1)
+  }
 
   rm <- rate_pa / 1200
   interest_month <- amount * rm
 
   if (type == "annuity") {
+
     payment_month <- if (rm > 0) {
       amount * rm / (1 - (1 + rm)^(-months))
     } else {
       amount / months
     }
-    principal_month <- max(0, payment_month - interest_month)
-  } else {
+
+    principal_month <-
+      max(0, payment_month - interest_month)
+
+  } else if (type == "tilgung") {
+
     principal_month <- amount / months
-    payment_month <- principal_month + interest_month
+    payment_month <-
+      principal_month + interest_month
+
+  } else if (type == "endfaellig") {
+
+    principal_month <- 0
+    payment_month <- interest_month
+
+  } else if (type == "credit_line") {
+
+    principal_month <- 0
+    payment_month <- interest_month
+
+  } else if (type == "zinsfrei") {
+
+    interest_month <- 0
+    principal_month <- amount / months
+    payment_month <- principal_month
   }
 
   list(
     active = TRUE,
-    interest_plus_fees_month = interest_month + fees_month,
-    principal_month = principal_month,
-    debt_service_month = payment_month + fees_month,
-    rate_pa = rate_pa,
-    amount = amount,
-    binding = binding
+    type = type,
+    interest_plus_fees_month =
+      interest_month + fees_month,
+    principal_month =
+      principal_month,
+    debt_service_month =
+      payment_month + fees_month,
+    rate_pa =
+      rate_pa,
+    amount =
+      amount,
+    months =
+      months,
+    fees_month =
+      fees_month,
+    binding =
+      binding
   )
 }
 

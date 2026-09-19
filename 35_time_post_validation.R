@@ -106,7 +106,20 @@ fbc_validate_post_decision <- function(
   tp <- fbc_build_time_path(
     problem,candidate,implementation_plan,horizon_months,monthly_evaluator
   )
+liquidity_bridge_need_eur <- 0
 
+if (
+  is.data.frame(tp$path) &&
+  nrow(tp$path) > 0 &&
+  "gap" %in% names(tp$path)
+) {
+  gaps <- as.numeric(tp$path$gap)
+  gaps <- gaps[is.finite(gaps) & gaps > 0]
+
+  if (length(gaps)) {
+    liquidity_bridge_need_eur <- sum(gaps)
+  }
+}
   if(length(post_target_months)!=1 || !is.finite(post_target_months) || post_target_months<0)
     stop("post_target_months muss explizit >= 0 gesetzt werden.")
   post_target_months <- as.integer(post_target_months)
@@ -163,6 +176,7 @@ fbc_validate_post_decision <- function(
     time_to_target_months=tp$time_to_target_months,
     target_reached_within_horizon=tp$target_reached_within_horizon,
     implementation_months_max=tp$implementation_months_max,
+    liquidity_bridge_need_eur=liquidity_bridge_need_eur,
     post_target_stable=post_stable,
     max_post_target_gap_eur=max_post_gap,
     mc_target_probability=mc_prob,
@@ -172,6 +186,7 @@ fbc_validate_post_decision <- function(
     employee_break_even_ok=emp_be_ok,
     capital_service_ratio=ds_ratio,
     capital_service_ok=ds_ok
+  
   )
 }
 
