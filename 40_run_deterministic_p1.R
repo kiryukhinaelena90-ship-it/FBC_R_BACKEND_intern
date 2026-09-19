@@ -579,181 +579,8 @@ target_path = list(
 
     break_even = be_detail,
 
-if(direct && bill <= 0){
-  errors.push(
-    T(
-      'Bitte geben Sie die tatsächlich an Kunden abrechenbaren Mitarbeiterstunden pro Monat ein.',
-      'Укажите фактические часы сотрудника в месяц, которые выставляются клиенту.'
-    )
-  );
-}
+    financing = fin_payload,
 
-То есть получится:
-
-const errors=[];
-
-if(direct && bill <= 0){
-  errors.push(
-    T(
-      'Bitte geben Sie die tatsächlich an Kunden abrechenbaren Mitarbeiterstunden pro Monat ein.',
-      'Укажите фактические часы сотрудника в месяц, которые выставляются клиенту.'
-    )
-  );
-}
-
-if(o.billable_hours_month > o.available_hours_month + 1e-9){
-  errors.push('owner_billable_exceeds_available');
-}
-
-buildConfig() у тебя уже останавливает расчёт, если s.errors.length > 0, поэтому больше отдельный запрет добавлять не нужно.
-
-Вторая правка — около строки 5923. Сейчас:
-
-const showEmployee=(empApplicable!==false) && Number.isFinite(empHours) && Number.isFinite(empBE);
-
-const showEmployee=
-  empApplicable === true &&
-  Number.isFinite(empHours) &&
-  Number.isFinite(empBE);
-
-Весь кусок будет:
-
-const empApplicable=get(p,'break_even.employee.applicable');
-const empOk=get(p,'break_even.employee.ok') ?? get(p,'post_decision.employee_break_even_ok');
-const empHours=Number(get(p,'break_even.employee.billable_hours'));
-const empBE=Number(get(p,'break_even.employee.break_even_hours'));
-const empSection=$('fbcEmployeeEconomicsSection');
-
-if(empSection){
-  const showEmployee=
-    empApplicable === true &&
-    Number.isFinite(empHours) &&
-    Number.isFinite(empBE);
-
-  empSection.hidden=!showEmployee;
-const robustness = get(p,'robustness') || {};
-const mcAvailable = robustness?.available === true;
-
-if($('fbcRMonteCarlo')){
-  $('fbcRMonteCarlo').hidden = !mcAvailable;
-
-  if(mcAvailable){
-
-const robustness = get(p,'robustness') || {};
-const mcAvailable = robustness?.available === true;
-const mcReason =
-  robustness?.reason ??
-  get(p,'audit.mc_error') ??
-  null;
-
-if($('fbcRMonteCarlo')){
-  $('fbcRMonteCarlo').hidden = false;
-
-  if(mcAvailable){
-
-  } else {
-
-    $('fbcMCProbability').textContent = '—';
-    $('fbcMCP10').textContent = '—';
-    $('fbcMCP50').textContent = '—';
-    $('fbcMCP90').textContent = '—';
-
-    const note = $('fbcRMonteCarlo')?.querySelector('.fbc-r-note');
-
-    if(note && mcReason){
-      note.textContent = T(
-        `Monte-Carlo-Berechnung konnte nicht ausgeführt werden: ${mcReason}`,
-        `Расчёт Monte Carlo не выполнен: ${mcReason}`
-      );
-    }
-  }
-
-То есть весь кусок станет примерно таким:
-
-const robustness = get(p,'robustness') || {};
-const mcAvailable = robustness?.available === true;
-const mcReason =
-  robustness?.reason ??
-  get(p,'audit.mc_error') ??
-  null;
-
-if($('fbcRMonteCarlo')){
-  $('fbcRMonteCarlo').hidden = false;
-
-  if(mcAvailable){
-    const p10 = robustness.p10;
-    const p50 = robustness.p50;
-    const p90 = robustness.p90;
-    const probability = robustness.target_probability;
-
-    $('fbcMCProbability').textContent =
-      probability == null ? '—' : pct(probability);
-
-    $('fbcMCP10').textContent =
-      p10 == null ? '—' : money(p10);
-
-    $('fbcMCP50').textContent =
-      p50 == null ? '—' : money(p50);
-
-    $('fbcMCP90').textContent =
-      p90 == null ? '—' : money(p90);
-
-  } else {
-
-    $('fbcMCProbability').textContent = '—';
-    $('fbcMCP10').textContent = '—';
-    $('fbcMCP50').textContent = '—';
-    $('fbcMCP90').textContent = '—';
-
-    const note = $('fbcRMonteCarlo')?.querySelector('.fbc-r-note');
-
-    if(note && mcReason){
-      note.textContent = T(
-        `Monte-Carlo-Berechnung konnte nicht ausgeführt werden: ${mcReason}`,
-        `Расчёт Monte Carlo не выполнен: ${mcReason}`
-      );
-    }
-  }
-}
-
-
-
-payload <- list(
-
-
-current_fin_contract <- list(
-  active = isTRUE(cfg$financing$active),
-  type = cfg$financing$type,
-  amount = cfg$financing$amount,
-  rate_pa = cfg$financing$rate_pa,
-  months = cfg$financing$months,
-  fees_month = cfg$financing$fees_month %||% 0,
-  one_time_fee = cfg$financing$one_time_fee %||% 0,
-  binding = cfg$financing$binding %||% NA_character_
-)
-
-fin_payload <- fbc_build_financing_branch38(
-  current_financing = current_fin_contract,
-  financing_alternative = NULL,
-  comparison_horizon_months = cfg$financing$months,
-  free_cash_before_debt_service_month = NULL,
-  min_debt_service_ratio = NULL,
-  market_context = NULL
-)
-
-Потом внутри самого:
-
-payload <- list(
-
-найди:
-
-break_even = be_detail,
-
-robustness = list(
-
-и между ними вставь:
-
-financing = fin_payload,
     robustness = list(
       target_probability = NULL,
       p10 = NULL,
@@ -772,45 +599,45 @@ financing = fin_payload,
       best_attainable_used = TRUE
     ),
 
-audit = list(
-  path = "P1_DETERMINISTIC_TARGET_NOT_REACHABLE",
-  mc_executed = FALSE,
-  optimizer_executed = TRUE,
-  demand_guard =
-    "free capacity is not treated as demand",
+    audit = list(
+      path = "P1_DETERMINISTIC_TARGET_NOT_REACHABLE",
+      mc_executed = FALSE,
+      optimizer_executed = TRUE,
+      demand_guard =
+        "free capacity is not treated as demand",
 
-  auxiliary_analysis = list(
-    implementation_timing_ok =
-      is.null(implementation_timing_error),
-    implementation_timing_error =
-      implementation_timing_error,
+      auxiliary_analysis = list(
+        implementation_timing_ok =
+          is.null(implementation_timing_error),
+        implementation_timing_error =
+          implementation_timing_error,
 
-    metrics_ok =
-  is.null(metrics_error),
-metrics_error =
-  metrics_error,
+        metrics_ok =
+          is.null(metrics_error),
+        metrics_error =
+          metrics_error,
 
-    post_validation_ok =
-      is.null(validation_error),
-    post_validation_error =
-      validation_error,
+        post_validation_ok =
+          is.null(validation_error),
+        post_validation_error =
+          validation_error,
 
-    changes_ok =
-      is.null(changes_error),
-    changes_error =
-      changes_error,
+        changes_ok =
+          is.null(changes_error),
+        changes_error =
+          changes_error,
 
-    shapley_ok =
-      is.null(shapley_error),
-    shapley_error =
-      shapley_error,
+        shapley_ok =
+          is.null(shapley_error),
+        shapley_error =
+          shapley_error,
 
-    break_even_ok =
-      is.null(break_even_error),
-    break_even_error =
-      break_even_error
-  )
-)
+        break_even_ok =
+          is.null(break_even_error),
+        break_even_error =
+          break_even_error
+      )
+    )
   )
 
   return(payload)
