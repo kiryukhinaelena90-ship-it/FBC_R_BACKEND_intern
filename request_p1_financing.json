@@ -1,0 +1,74 @@
+{
+  "schema_version": "FBC_P1_COCKPIT_REQUEST_1.0",
+  "fbc_version": "FBC_USER_BASE_R1",
+  "locale": "de",
+  "mode": "owner_employee",
+  "objective_mode": "reach_income_target",
+  "owner": {
+    "price": 100,
+    "hours_week": 30,
+    "days_week": 4,
+    "vacation_days": 24,
+    "billable_hours_month": 72,
+    "monthly_target": 4000,
+    "insurance_month": 450,
+    "pension_mode": "fixed",
+    "pension_fixed_month": 300,
+    "holidays": 6.4
+  },
+  "employee": {
+    "form": "midi",
+    "wage_hour": 17,
+    "hours_week": 13.8461538,
+    "days_week": 3,
+    "vacation_days": 18,
+    "direct_billing": true,
+    "customer_price": 70,
+    "billable_hours_month": 40,
+    "paid_available_hours_month": 51.230769,
+    "personnel_cost_month": 1271.839046,
+    "extra_cost_month": 0,
+    "employer_addon_rate": 0.246901,
+    "holidays": 4.8
+  },
+  "operating_costs": {
+    "office": 650,
+    "energy": 180,
+    "vehicle": 250,
+    "fuel": 180,
+    "software": 120,
+    "accounting": 180,
+    "business_insurance": 90,
+    "material": 300,
+    "marketing": 200,
+    "other": 150
+  },
+"financing": {
+  "active": true,
+  "type": "annuity",
+  "amount": 3000,
+  "rate_pa": 4.36,
+  "months": 36,
+  "fees_month": 0,
+  "binding": "fixed"
+},
+  "legal_form": "freelance",
+  "trade_tax_rate": 0,
+  "confirmed_bounds": {
+  "owner_price": {
+    "lower": 100,
+    "upper": 110,
+    "source_type": "user_confirmed",
+    "reason": "Vom Nutzer bestätigter Preisrahmen",
+    "implementation": {
+      "months_to_full": 3,
+      "mode": "linear",
+      "source_type": "user_confirmed"
+    }
+  }
+},
+  "cost_evidence": {},
+  "variable_cost_keys": [],
+  "horizon_months": 12,
+  "post_target_months": 3
+}

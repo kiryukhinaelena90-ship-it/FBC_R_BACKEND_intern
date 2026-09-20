@@ -75,7 +75,10 @@ fbc_map_financing <- function(x){
     tilgung="tilgung",
     bullet="endfaellig",
     line="credit_line",
-    zero="zinsfrei"
+    zero="zinsfrei",
+    endfaellig="endfaellig",
+    credit_line="credit_line",
+    zinsfrei="zinsfrei"
   )
 
   if(!type %in% names(type_map)) type <- "annuity"
@@ -518,7 +521,9 @@ fbc_p0_payload <- function(cfg){
       time_to_target_months=NULL,
       target_reached_within_horizon=(gap<=1e-9),
       implementation_months_max=NULL,
-      liquidity_bridge_need_eur=if(gap>0) gap else 0,
+      # P0 has no evidenced implementation path. A target gap is not
+      # automatically a temporary liquidity bridge.
+      liquidity_bridge_need_eur=0,
       path=list()
     ),
     post_decision=list(
@@ -592,6 +597,9 @@ fbc_has_evidence <- function(cfg){
 fbc_runner39_cfg <- function(cfg){
   out <- cfg
   out$operating_costs <- fbc_map_costs(cfg$operating_costs)
+  # Convert frontend financing names (bullet/line/zero) to the canonical
+  # financing-engine names before deterministic P1 / Monte Carlo sees them.
+  out$financing <- fbc_map_financing(cfg$financing)
   out$owner_holiday_days <- num1(cfg$owner$holidays)
   out$employee_holiday_days <- num1(cfg$employee$holidays)
   out$employer_addon_rate <- num1(cfg$employee$employer_addon_rate)

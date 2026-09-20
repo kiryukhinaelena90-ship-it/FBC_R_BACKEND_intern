@@ -168,6 +168,95 @@ fbc_business_break_even40 <- function(
   )
 }
 
+
+# Build the financing result against the OPERATING state selected by P1.
+# Borrowed principal is never treated as income. DSCR uses the existing
+# calc_current_debt_capacity19() semantics (free funds before debt service).
+fbc_financing_payload40 <- function(
+    base_state,
+    problem,
+    solution,
+    cfg
+){
+  if(!isTRUE(cfg$financing$active)){
+    return(list(
+      active = FALSE,
+      status = "no_financing",
+      current = NULL,
+      alternative = NULL,
+      comparison = NULL,
+      note = "Finanzierung ist kein operativer KKT-Hebel."
+    ))
+  }
+
+  contract <- list(
+    type = cfg$financing$type,
+    amount = cfg$financing$amount,
+    rate_pa = cfg$financing$rate_pa,
+    months = cfg$financing$months,
+    fees_month = cfg$financing$fees_month %||% 0,
+    one_time_fee = cfg$financing$one_time_fee %||% 0,
+    binding = cfg$financing$binding %||% NA_character_
+  )
+
+  selected_state <- fbc_state_from_solution40(
+    base_state,
+    problem,
+    solution
+  )
+
+  cur <- calc_current_business_result19(
+    selected_state,
+    owner_pension_month = cfg$owner_pension_month %||% 0,
+    tax_month = cfg$tax_month %||% 0
+  )
+
+  revenue <- cur$owner_revenue + cur$employee_revenue
+
+  debt <- calc_current_debt_capacity19(
+    selected_state,
+    revenue
+  )
+
+  summary <- fbc_summarize_financing(
+    contract,
+    comparison_horizon_months = cfg$financing$months,
+    free_cash_before_debt_service_month =
+      debt$free_funds_before_debt_service,
+    min_debt_service_ratio = NULL
+  )
+
+  ratio <- summary$min_capital_service_ratio
+
+  list(
+    active = TRUE,
+    status = "current_financing_only",
+    current = list(
+      type = summary$contract$type,
+      amount = summary$contract$amount,
+      rate_pa = summary$contract$rate_pa,
+      months = summary$contract$months %||% NA,
+      binding = summary$contract$binding %||% NA_character_,
+      total_interest = summary$total_interest,
+      total_fees = summary$total_fees,
+      total_financing_expense = summary$total_financing_expense,
+      total_cash_service = summary$total_cash_service,
+      first_month_cash_service = summary$first_month_cash_service,
+      max_month_cash_service = summary$max_month_cash_service,
+      restschuld_end = summary$restschuld_end,
+      min_capital_service_ratio = ratio,
+      capital_service_policy_ok =
+        if(is.na(ratio)) NA else ratio >= 1
+    ),
+    alternative = NULL,
+    comparison = NULL,
+    note = paste(
+      "Finanzierung bleibt getrennt vom operativen Ergebnis.",
+      "Kreditbetrag ist kein Betriebsergebnis; Tilgung ist Liquiditätsabfluss, aber kein Aufwand."
+    )
+  )
+}
+
 fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
 
   stage <- "load_modules"
@@ -503,10 +592,21 @@ be_detail <- tryCatch(
       100 * remaining_gap / target
     else NA_real_
 
+  # The fast KKT pool can be empty even when the validated best corner
+  # reaches the target. Do not mislabel such a fallback as unreachable.
+  fallback_target_reached <-
+    is.finite(best$net) &&
+    is.finite(target) &&
+    as.numeric(best$net) >= target - 1e-6
+
   payload <- list(
     schema_version = "fbc_decision_payload_v1",
 
-    status = "target_not_reachable",
+    status =
+      if(isTRUE(fallback_target_reached))
+        "recommendation_selected"
+      else
+        "target_not_reachable",
 
     current = list(
       expected_net = current_net,
@@ -519,11 +619,15 @@ be_detail <- tryCatch(
     ),
 
     recommendation = list(
-      candidate_id = NULL,
+      candidate_id =
+        if(isTRUE(fallback_target_reached))
+          "best_corner_fallback"
+        else
+          NULL,
       active_levers = best_candidate$active_levers,
       changes = changes,
       projected_net = as.numeric(best$net),
-      target_reached = FALSE,
+      target_reached = isTRUE(fallback_target_reached),
       remaining_gap_eur = remaining_gap,
       remaining_gap_percent = remaining_gap_pct,
       explanation = shapley
@@ -532,7 +636,8 @@ be_detail <- tryCatch(
 target_path = list(
   time_to_target_months =
     validation$time_to_target_months,
-  target_reached_within_horizon = FALSE,
+  target_reached_within_horizon =
+    isTRUE(validation$target_reached_within_horizon),
   implementation_months_max =
     validation$implementation_months_max,
   liquidity_bridge_need_eur =
@@ -561,7 +666,12 @@ target_path = list(
 
     break_even = be_detail,
 
-
+    financing = fbc_financing_payload40(
+      base_state = state,
+      problem = problem,
+      solution = best_solution,
+      cfg = cfg
+    ),
 
     robustness = list(
       target_probability = NULL,
@@ -577,12 +687,17 @@ target_path = list(
       optimizer_levers =
         as.list(problem$registry$name),
       financing_separate = TRUE,
-      target_feasible = FALSE,
-      best_attainable_used = TRUE
+      target_feasible = isTRUE(fallback_target_reached),
+      best_attainable_used = !isTRUE(fallback_target_reached),
+      fallback_corner_used = TRUE
     ),
 
     audit = list(
-      path = "P1_DETERMINISTIC_TARGET_NOT_REACHABLE",
+      path =
+        if(isTRUE(fallback_target_reached))
+          "P1_DETERMINISTIC_REACHABLE_FALLBACK"
+        else
+          "P1_DETERMINISTIC_TARGET_NOT_REACHABLE",
       mc_executed = FALSE,
       optimizer_executed = TRUE,
       demand_guard =
@@ -724,6 +839,30 @@ target_path = list(
     )
 
   payload <- result$payload
+
+  payload$financing <- fbc_financing_payload40(
+    base_state = state,
+    problem = problem,
+    solution = result$selected$solution,
+    cfg = cfg
+  )
+
+  if(
+    isTRUE(payload$financing$active) &&
+    is.list(payload$financing$current)
+  ){
+    fin_ratio <- suppressWarnings(
+      as.numeric(
+        payload$financing$current$min_capital_service_ratio %||% NA_real_
+      )[1]
+    )
+
+    payload$post_decision$capital_service_ratio <-
+      if(is.na(fin_ratio)) NA_real_ else fin_ratio
+
+    payload$post_decision$capital_service_ok <-
+      if(is.na(fin_ratio)) NA else fin_ratio >= 1
+  }
 
   payload$robustness <- list(
     target_probability = NULL,

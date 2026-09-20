@@ -106,18 +106,35 @@ fbc_validate_post_decision <- function(
   tp <- fbc_build_time_path(
     problem,candidate,implementation_plan,horizon_months,monthly_evaluator
   )
+# A liquidity bridge is only meaningful for a TEMPORARY gap on a path that
+# actually reaches the target within the validated horizon. A permanent
+# structural target gap must never be converted into a loan amount.
+#
+# Month 0 is the factual starting point, not a future financing month.
 liquidity_bridge_need_eur <- 0
 
 if (
+  isTRUE(tp$target_reached_within_horizon) &&
+  is.finite(tp$time_to_target_months) &&
+  tp$time_to_target_months > 0 &&
   is.data.frame(tp$path) &&
   nrow(tp$path) > 0 &&
-  "gap" %in% names(tp$path)
+  all(c("month", "gap") %in% names(tp$path))
 ) {
-  gaps <- as.numeric(tp$path$gap)
-  gaps <- gaps[is.finite(gaps) & gaps > 0]
+  bridge_rows <- tp$path[
+    tp$path$month > 0 &
+    tp$path$month <= tp$time_to_target_months,
+    ,
+    drop=FALSE
+  ]
 
-  if (length(gaps)) {
-    liquidity_bridge_need_eur <- sum(gaps)
+  if (nrow(bridge_rows)) {
+    gaps <- as.numeric(bridge_rows$gap)
+    gaps <- gaps[is.finite(gaps) & gaps > 0]
+
+    if (length(gaps)) {
+      liquidity_bridge_need_eur <- sum(gaps)
+    }
   }
 }
   if(length(post_target_months)!=1 || !is.finite(post_target_months) || post_target_months<0)

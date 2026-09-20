@@ -24,6 +24,7 @@ fbc_load_modules41 <- function(root=getwd(), envir){
     "10_gesamtkosten_kapitaldienst.R",
     "11_business_break_even.R",
     "18_cockpit_input_contract.R",
+    "24_financial_net_adapter.R",
     "22_statistical_mc_bridge.R",
     "29_production_statistical_cost_layer.R"
   )
@@ -44,7 +45,6 @@ fbc_state_from_cfg41 <- function(cfg){
   state$legal_form <- cfg$legal_form %||% "freelance"
   state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
 
-  # Same factual-hours contract as deterministic runner 40.
   state$owner$physical_available_hours_month <- state$owner$available_hours_month
   state$owner$available_hours_month <- max(
     0,
@@ -177,7 +177,6 @@ fbc_run_post_p1_mc_41 <- function(
   out <- payload
   if(is.null(out) || !is.list(out)) stop("payload must be a P1 payload list.")
 
-  # MC is an enrichment layer. Never make a valid deterministic payload fatal.
   fail_soft <- function(message){
     out$robustness <<- fbc_empty_robustness41(message)
     out$post_decision$mc_target_probability <<- NULL
@@ -217,11 +216,55 @@ fbc_run_post_p1_mc_41 <- function(
     )
 
     d <- layer$draws
+
+    # IMPORTANT: module 29 produces an operational result layer, but the
+    # deterministic P1 decision is expressed as owner net available AFTER
+    # insurance, pension and the 2026 tax orientation from module 24.
+    # Apply the same financial adapter to every Monte Carlo draw so that
+    # deterministic projected_net and MC P10/P50/P90 are comparable.
+    gross_before_owner_protection_tax <-
+      d$owner_revenue +
+      d$employee_revenue -
+      d$operating_costs_total -
+      d$personnel_cost -
+      d$financing_result_cost
+
+    fin_points <- lapply(
+      gross_before_owner_protection_tax,
+      function(gross){
+        fbc_financial_point24(
+          result_before_owner_protection_tax = gross,
+          owner = state$owner,
+          legal_form = state$legal_form %||% "freelance",
+          trade_tax_rate = state$trade_tax_rate %||% 0
+        )
+      }
+    )
+
+    d$result_before_owner_protection_tax <- gross_before_owner_protection_tax
+    d$owner_insurance_month <- vapply(
+      fin_points, function(z) as.numeric(z$insurance_month), numeric(1)
+    )
+    d$owner_pension_month <- vapply(
+      fin_points, function(z) as.numeric(z$pension_month), numeric(1)
+    )
+    d$tax_month <- vapply(
+      fin_points, function(z) as.numeric(z$tax_month), numeric(1)
+    )
+    d$net_available <- vapply(
+      fin_points, function(z) as.numeric(z$net_available), numeric(1)
+    )
+    d$target_gap_eur <- pmax(0, state$owner$monthly_target - d$net_available)
+    d$target_reached <- d$net_available >= state$owner$monthly_target
+
+    # Keep the corrected draw table inside the layer for diagnostics/risk output.
+    layer$draws <- d
+
     net <- d$net_available
     reached <- d$target_reached
 
     if(!length(net) || any(!is.finite(net)))
-      return(fail_soft("Monte Carlo produced non-finite net results."))
+      return(fail_soft("Monte Carlo produced non-finite net results after financial adapter."))
 
     rob <- list(
       available = TRUE,
@@ -233,13 +276,12 @@ fbc_run_post_p1_mc_41 <- function(
       p90 = as.numeric(quantile(net, .90, names=FALSE)),
       n = as.integer(length(net)),
       risk_drivers = fbc_mc_risk_drivers41(layer),
-      method = "post-P1 Monte Carlo on the already selected deterministic state",
+      method = "post-P1 Monte Carlo on selected deterministic state with per-draw 2026 financial net adapter",
       decision_reoptimized = FALSE
     )
 
     out$robustness <- rob
     out$post_decision$mc_target_probability <- rob$target_probability
-    # No invented policy threshold: probability is reported, not converted to pass/fail.
     out$post_decision$mc_policy_ok <- NULL
 
     if(is.null(out$production_meta)) out$production_meta <- list()
@@ -252,6 +294,7 @@ fbc_run_post_p1_mc_41 <- function(
     out$audit$mc_error <- NULL
     out$audit$mc_data_file <- mc_file
     out$audit$mc_decision_reoptimized <- FALSE
+    out$audit$mc_net_basis <- "same 2026 financial net adapter as deterministic P1"
 
     out
   }, error=function(e){
