@@ -91,7 +91,6 @@ fbc_map_financing <- function(x){
     rate_pa=num1(x$rate_pa),
     months=max(1,round(num1(x$months,1))),
     fees_month=num1(x$fees_month),
-    one_time_fee=num1(x$one_time_fee),
     binding=as.character(x$binding %||% "fixed")
   )
 }
