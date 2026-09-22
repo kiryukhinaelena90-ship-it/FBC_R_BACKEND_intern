@@ -50,7 +50,7 @@ build_optimizer_problem26 <- function(
   }
 
 # Owner hours only if explicitly confirmed.
-cur_h <- state$owner$available_hours_month
+cur_h <- state$owner$billable_hours_month
 
 if (
   !is.null(confirmed_bounds$owner_hours_max) &&
@@ -88,10 +88,10 @@ if (
     }
     if (!is.null(employee_bounds$billable_hours_max) &&
         is.finite(employee_bounds$billable_hours_max) &&
-        employee_bounds$billable_hours_max >= state$employee$available_hours_month) {
+        employee_bounds$billable_hours_max >= state$employee$billable_hours_month) {
       add_var("employee_billable_hours",
-              state$employee$available_hours_month,
-              state$employee$available_hours_month,
+              state$employee$billable_hours_month,
+              state$employee$billable_hours_month,
               employee_bounds$billable_hours_max)
     }
   }
@@ -102,14 +102,14 @@ if (
   eval_x <- function(x) {
     names(x)<-reg$name
     price <- if ("owner_price"%in%names(x)) x["owner_price"] else state$owner$price
-    hours <- if ("owner_hours"%in%names(x)) x["owner_hours"] else state$owner$available_hours_month
+    hours <- if ("owner_hours"%in%names(x)) x["owner_hours"] else state$owner$billable_hours_month
     costs <- state$operating_costs
     for (k in names(costs)) {
       nm<-paste0("cost_",k)
       if (nm%in%names(x)) costs[k]<-x[nm]
     }
     ep <- if ("employee_customer_price"%in%names(x)) x["employee_customer_price"] else state$employee$customer_price
-    eh <- if ("employee_billable_hours"%in%names(x)) x["employee_billable_hours"] else state$employee$available_hours_month
+    eh <- if ("employee_billable_hours"%in%names(x)) x["employee_billable_hours"] else state$employee$billable_hours_month
 
     pt <- evaluate_point21(
   state=state,
@@ -157,9 +157,9 @@ pt$net_available
     # Primary goal: minimize owner work, secondary: avoid needless movement.
     obj <- function(x) {
       names(x)<-reg$name
-      h <- if ("owner_hours"%in%names(x)) x["owner_hours"] else state$owner$available_hours_month
+      h <- if ("owner_hours"%in%names(x)) x["owner_hours"] else state$owner$billable_hours_month
       gap <- max(0, desired_net-eval_x(x))
-      h/max(state$owner$available_hours_month,1) +
+      h/max(state$owner$billable_hours_month,1) +
         0.05*distance(x) +
         1e4*(gap/max(abs(desired_net),1))^2
     }

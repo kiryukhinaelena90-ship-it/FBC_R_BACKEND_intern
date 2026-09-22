@@ -33,10 +33,10 @@ assert_scalar21 <- function(x, name, lower = -Inf, upper = Inf) {
 evaluate_point21 <- function(
     state,
     owner_price = state$owner$price,
-    owner_hours = state$owner$available_hours_month,
+    owner_hours = state$owner$billable_hours_month,
     operating_costs = state$operating_costs,
     employee_customer_price = state$employee$customer_price,
-    employee_billable_hours = state$employee$available_hours_month,
+    employee_billable_hours = state$employee$billable_hours_month,
     owner_pension_month = 0,
     tax_month = 0
 ) {
@@ -128,7 +128,7 @@ build_differential_influence21 <- function(
   )
 
   price0 <- state$owner$price
-  hours0 <- state$owner$available_hours_month
+  hours0 <- state$owner$billable_hours_month
 
   # Module 19 V2 exposes price as owner_price_min (scalar), not as a min/max list.
   # Until a defensible upper price bound is supplied, local differentiation is
@@ -215,7 +215,7 @@ build_differential_influence21 <- function(
 
   # Employee variables are diagnostic only unless explicitly unlocked.
   employee_price_derivative <- if (isTRUE(state$employee$direct_billing)) {
-    state$employee$available_hours_month
+    state$employee$billable_hours_month
   } else {
     0
   }

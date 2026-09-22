@@ -32,6 +32,22 @@ assert_nonneg19 <- function(x, name) {
   invisible(TRUE)
 }
 
+# Commercial billable hours are independent from physical/paid capacity.
+fbc_owner_billable_hours19 <- function(state) {
+  x <- state$owner$billable_hours_month
+  if (is.null(x) || !is.finite(as.numeric(x)))
+    stop("state$owner$billable_hours_month fehlt oder ist ungültig.")
+  as.numeric(x)
+}
+
+fbc_employee_billable_hours19 <- function(state) {
+  if (!isTRUE(state$employee$direct_billing)) return(0)
+  x <- state$employee$billable_hours_month
+  if (is.null(x) || !is.finite(as.numeric(x)))
+    stop("state$employee$billable_hours_month fehlt oder ist ungültig.")
+  as.numeric(x)
+}
+
 # Explicit decision bounds. Nothing is guessed.
 # For each cost line, controllable=TRUE is required before optimization may change it.
 # min_value/max_value are absolute monthly euro bounds.
@@ -98,7 +114,7 @@ calc_current_business_result19 <- function(
   assert_nonneg19(tax_month, "tax_month")
 
   owner_revenue <-
-    state$owner$price * state$owner$available_hours_month
+    state$owner$price * fbc_owner_billable_hours19(state)
   employee_revenue <- state$employee$revenue_month
   operating <- sum(state$operating_costs)
   personnel <- state$employee$personnel_cost_month
@@ -162,7 +178,7 @@ calc_reality_break_even19 <- function(
     verfuegbare_einheiten_monat = business_available_units_month
   )
 
-  emp_hours <- state$employee$available_hours_month
+  emp_hours <- fbc_employee_billable_hours19(state)
   emp_price <- state$employee$customer_price
   emp_cost <- state$employee$personnel_cost_month
   emp_db <- emp_price - employee_variable_cost_per_hour
@@ -182,7 +198,7 @@ calc_reality_break_even19 <- function(
     business = business_be,
     employee = list(
       direct_billing = isTRUE(state$employee$direct_billing),
-      available_hours_month = emp_hours,
+      billable_hours_month = emp_hours,
       break_even_hours = employee_be_hours,
       break_even_reachable = if (is.na(employee_be_hours)) {
         NA
@@ -288,7 +304,7 @@ build_reality_constraints19 <- function(
     cost_controls = NULL,
     owner_pension_month = 0,
     tax_month = 0,
-    max_owner_hours_month = state$owner$available_hours_month,
+    max_owner_hours_month = fbc_owner_billable_hours19(state),
     financing_alternative = NULL,
     financing_projection_revenue = NULL,
     min_debt_service_ratio = 1
@@ -326,14 +342,14 @@ build_reality_constraints19 <- function(
     current = current,
     bounds = list(
       owner_price_min = 0,
-      owner_hours_month_current = state$owner$available_hours_month,
+      owner_hours_month_current = fbc_owner_billable_hours19(state),
       owner_hours_month_max = max_owner_hours_month,
       operating_costs = cost_bounds
     ),
     debt_service = debt,
     optimization_allowed = list(
       price = TRUE,
-      capacity = max_owner_hours_month > state$owner$available_hours_month,
+      capacity = max_owner_hours_month > fbc_owner_billable_hours19(state),
       costs = setNames(cost_bounds$controllable, cost_bounds$key),
       personnel = FALSE
     ),

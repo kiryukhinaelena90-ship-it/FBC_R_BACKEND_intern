@@ -56,7 +56,7 @@ fbc_state_from_solution40 <- function(base_state, problem, solution){
     s$owner$price <- as.numeric(x["owner_price"])
 
   if("owner_hours" %in% names(x))
-    s$owner$available_hours_month <- as.numeric(x["owner_hours"])
+    s$owner$billable_hours_month <- as.numeric(x["owner_hours"])
 
   for(k in names(s$operating_costs)){
     nm <- paste0("cost_", k)
@@ -68,11 +68,11 @@ fbc_state_from_solution40 <- function(base_state, problem, solution){
     s$employee$customer_price <- as.numeric(x["employee_customer_price"])
 
   if("employee_billable_hours" %in% names(x))
-    s$employee$available_hours_month <- as.numeric(x["employee_billable_hours"])
+    s$employee$billable_hours_month <- as.numeric(x["employee_billable_hours"])
 
   s$employee$revenue_month <-
     if(isTRUE(s$employee$direct_billing))
-      s$employee$customer_price * s$employee$available_hours_month
+      s$employee$customer_price * s$employee$billable_hours_month
   else 0
 
   s
@@ -83,10 +83,10 @@ fbc_business_break_even40 <- function(
     variable_cost_keys,
     employee_variable_cost_per_hour=0
 ){
-  owner_h <- as.numeric(state$owner$available_hours_month)
+  owner_h <- as.numeric(state$owner$billable_hours_month)
 
   emp_h <- if(isTRUE(state$employee$direct_billing))
-    as.numeric(state$employee$available_hours_month)
+    as.numeric(state$employee$billable_hours_month)
   else 0
 
   units <- owner_h + emp_h
@@ -133,7 +133,7 @@ fbc_business_break_even40 <- function(
 
     emp_ok <-
       is.finite(emp_be_hours) &&
-      emp_be_hours <= state$employee$available_hours_month + 1e-8
+      emp_be_hours <= state$employee$billable_hours_month + 1e-8
   }
 
   list(
@@ -157,11 +157,17 @@ fbc_business_break_even40 <- function(
       customer_price = state$employee$customer_price,
       variable_cost_per_hour = employee_variable_cost_per_hour,
       personnel_cost_month = state$employee$personnel_cost_month,
-      billable_hours = state$employee$available_hours_month,
+      billable_hours = state$employee$billable_hours_month,
+      revenue_month = state$employee$customer_price * emp_h,
+      variable_cost_month = employee_variable_cost_per_hour * emp_h,
+      result_contribution_month =
+        state$employee$customer_price * emp_h -
+        state$employee$personnel_cost_month -
+        employee_variable_cost_per_hour * emp_h,
       break_even_hours = emp_be_hours,
       hours_above_break_even =
         if(isTRUE(state$employee$direct_billing))
-          state$employee$available_hours_month - emp_be_hours
+          state$employee$billable_hours_month - emp_be_hours
       else NA_real_,
       ok = emp_ok
     )
@@ -242,7 +248,9 @@ fbc_financing_payload40 <- function(
       total_financing_expense = summary$total_financing_expense,
       total_cash_service = summary$total_cash_service,
       first_month_cash_service = summary$first_month_cash_service,
+      last_month_cash_service = summary$last_month_cash_service,
       max_month_cash_service = summary$max_month_cash_service,
+      free_cash_before_debt_service = debt$free_funds_before_debt_service,
       restschuld_end = summary$restschuld_end,
       min_capital_service_ratio = ratio,
       capital_service_policy_ok =
@@ -281,8 +289,10 @@ fbc_run_deterministic_p1_40 <- function(cfg, root=getwd()){
   state$legal_form <- cfg$legal_form %||% "freelance"
 state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
 
+  # Separate physical/paid capacity from commercial billable hours.
+  # available_hours_month stays physical capacity; optimization uses billable_hours_month.
   state$owner$physical_available_hours_month <- state$owner$available_hours_month
-  state$owner$available_hours_month <-
+  state$owner$billable_hours_month <-
     max(0, as.numeric(cfg$owner$billable_hours_month %||%
                         state$owner$available_hours_month))
 
@@ -290,11 +300,11 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
     as.numeric(cfg$employee$paid_hours_month %||%
                  state$employee$available_hours_month)
 
-  state$employee$available_hours_month <-
+  state$employee$billable_hours_month <-
     if(isTRUE(state$employee$direct_billing))
       max(0, as.numeric(cfg$employee$billable_hours_month %||%
                           state$employee$available_hours_month))
-  else 0
+    else 0
 
   if(is.finite(as.numeric(cfg$employee$personnel_cost_month %||% NA_real_))){
     state$employee$personnel_cost_month <-
@@ -303,15 +313,15 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
 
   state$employee$revenue_month <-
     if(isTRUE(state$employee$direct_billing))
-      state$employee$customer_price * state$employee$available_hours_month
+      state$employee$customer_price * state$employee$billable_hours_month
   else 0
 
   state_rules <- state
   state_rules$owner$billable_hours_month <-
-  state$owner$available_hours_month
+  state$owner$billable_hours_month
 
 state_rules$employee$billable_hours_month <-
-  state$employee$available_hours_month
+  state$employee$billable_hours_month
   state_rules$employee$contract_hours_week <-
     cfg$employee$contract_hours_week %||% cfg$employee$hours_week
 
@@ -344,7 +354,7 @@ state_rules$employee$billable_hours_month <-
     ]
 
   if(!length(owner_hours_max))
-    owner_hours_max <- state$owner$available_hours_month
+    owner_hours_max <- state$owner$billable_hours_month
   stage <- "19_reality"
   reality <- build_reality_constraints19(
     state = state,

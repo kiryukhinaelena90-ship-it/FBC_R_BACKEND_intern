@@ -143,9 +143,18 @@ build_all_cost_mc29 <- function(
     draws$financing_result_cost <- rep(state$financing$interest_plus_fees_month,n)
   }
 
-  owner_revenue <- state$owner$price*state$owner$available_hours_month
+  owner_billable <- as.numeric(state$owner$billable_hours_month)
+  if(!is.finite(owner_billable)) stop("state$owner$billable_hours_month fehlt oder ist ungültig.")
+
+  employee_billable <- if(isTRUE(state$employee$direct_billing)) {
+    x <- as.numeric(state$employee$billable_hours_month)
+    if(!is.finite(x)) stop("state$employee$billable_hours_month fehlt oder ist ungültig.")
+    x
+  } else 0
+
+  owner_revenue <- state$owner$price * owner_billable
   employee_revenue <- if(isTRUE(state$employee$direct_billing)) {
-    state$employee$customer_price*state$employee$available_hours_month
+    state$employee$customer_price * employee_billable
   } else 0
 
   cost_cols <- paste0("cost_",FBC_COST_KEYS29)

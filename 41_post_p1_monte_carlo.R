@@ -45,8 +45,10 @@ fbc_state_from_cfg41 <- function(cfg){
   state$legal_form <- cfg$legal_form %||% "freelance"
   state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
 
+  # Separate physical/paid capacity from commercial billable hours.
+  # available_hours_month remains the physical capacity from module 18.
   state$owner$physical_available_hours_month <- state$owner$available_hours_month
-  state$owner$available_hours_month <- max(
+  state$owner$billable_hours_month <- max(
     0,
     as.numeric(cfg$owner$billable_hours_month %||% state$owner$available_hours_month)
   )
@@ -55,7 +57,7 @@ fbc_state_from_cfg41 <- function(cfg){
     cfg$employee$paid_hours_month %||% state$employee$available_hours_month
   )
 
-  state$employee$available_hours_month <- if(isTRUE(state$employee$direct_billing)) {
+  state$employee$billable_hours_month <- if(isTRUE(state$employee$direct_billing)) {
     max(
       0,
       as.numeric(cfg$employee$billable_hours_month %||% state$employee$available_hours_month)
@@ -67,7 +69,7 @@ fbc_state_from_cfg41 <- function(cfg){
   }
 
   state$employee$revenue_month <- if(isTRUE(state$employee$direct_billing)) {
-    state$employee$customer_price * state$employee$available_hours_month
+    state$employee$customer_price * state$employee$billable_hours_month
   } else 0
 
   state
@@ -85,11 +87,11 @@ fbc_apply_payload_changes41 <- function(state, payload){
     if(identical(lever, "owner_price")){
       state$owner$price <- proposed
     } else if(identical(lever, "owner_hours")){
-      state$owner$available_hours_month <- proposed
+      state$owner$billable_hours_month <- proposed
     } else if(identical(lever, "employee_customer_price")){
       state$employee$customer_price <- proposed
     } else if(identical(lever, "employee_billable_hours")){
-      state$employee$available_hours_month <- proposed
+      state$employee$billable_hours_month <- proposed
     } else if(grepl("^cost_", lever)){
       key <- sub("^cost_", "", lever)
       if(key %in% names(state$operating_costs)) state$operating_costs[key] <- proposed
@@ -97,7 +99,7 @@ fbc_apply_payload_changes41 <- function(state, payload){
   }
 
   state$employee$revenue_month <- if(isTRUE(state$employee$direct_billing)) {
-    state$employee$customer_price * state$employee$available_hours_month
+    state$employee$customer_price * state$employee$billable_hours_month
   } else 0
 
   state

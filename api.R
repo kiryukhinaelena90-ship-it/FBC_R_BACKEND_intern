@@ -91,6 +91,7 @@ fbc_map_financing <- function(x){
     rate_pa=num1(x$rate_pa),
     months=max(1,round(num1(x$months,1))),
     fees_month=num1(x$fees_month),
+    one_time_fee=num1(x$one_time_fee),
     binding=as.character(x$binding %||% "fixed")
   )
 }
@@ -132,13 +133,14 @@ fbc_build_factual_state <- function(cfg){
   owner_bill <- max(0,num1(owner$billable_hours_month))
   emp_bill <- if(flag1(employee$direct_billing)) max(0,num1(employee$billable_hours_month)) else 0
 
+  # Keep physical/paid capacity and commercial billable hours as separate facts.
+  # available_hours_month stays the physical capacity created by module 18.
   state$owner$physical_available_hours_month <- state$owner$available_hours_month
-  state$owner$available_hours_month <- owner_bill
+  state$owner$billable_hours_month <- owner_bill
 
   state$employee$paid_available_hours_month <-
     num1(employee$paid_available_hours_month, state$employee$available_hours_month)
   state$employee$billable_hours_month <- emp_bill
-  state$employee$available_hours_month <- emp_bill
 
   # Use factual personnel cost from the Cockpit when supplied. This preserves
   # employment-form logic already calculated in the current frontend.
@@ -163,9 +165,9 @@ fbc_sensitivity_payload <- function(state, cfg){
 
   eval_net <- function(
       owner_price = state$owner$price,
-      owner_hours = state$owner$available_hours_month,
+      owner_hours = state$owner$billable_hours_month,
       employee_price = state$employee$customer_price,
-      employee_hours = state$employee$available_hours_month,
+      employee_hours = state$employee$billable_hours_month,
       operating_costs = state$operating_costs
   ){
 
@@ -284,13 +286,13 @@ fbc_sensitivity_payload <- function(state, cfg){
       changed_net =
         eval_net(
           owner_hours =
-            state$owner$available_hours_month * 1.01
+            state$owner$billable_hours_month * 1.01
         ),
 
       perturbation_pct = 1,
 
       current =
-        state$owner$available_hours_month
+        state$owner$billable_hours_month
     )
 
 
@@ -326,13 +328,13 @@ fbc_sensitivity_payload <- function(state, cfg){
         changed_net =
           eval_net(
             employee_hours =
-              state$employee$available_hours_month * 1.01
+              state$employee$billable_hours_month * 1.01
           ),
 
         perturbation_pct = 1,
 
         current =
-          state$employee$available_hours_month
+          state$employee$billable_hours_month
       )
   }
 
@@ -448,7 +450,7 @@ fbc_current_financing_payload <- function(state){
 fbc_p0_payload <- function(cfg){
   state <- fbc_build_factual_state(cfg)
 
-  owner_rev <- state$owner$price * state$owner$available_hours_month
+  owner_rev <- state$owner$price * state$owner$billable_hours_month
   emp_rev <- state$employee$revenue_month
   op <- sum(state$operating_costs)
   pc <- state$employee$personnel_cost_month
@@ -466,8 +468,8 @@ fbc_p0_payload <- function(cfg){
   gap <- max(0,target-financial$net_available)
   gap_pct <- if(target>0) 100*gap/target else NA_real_
 
-  total_h <- state$owner$available_hours_month +
-    if(isTRUE(state$employee$direct_billing)) state$employee$available_hours_month else 0
+  total_h <- state$owner$billable_hours_month +
+    if(isTRUE(state$employee$direct_billing)) state$employee$billable_hours_month else 0
   revenue <- owner_rev+emp_rev
   weighted_price <- if(total_h>0) revenue/total_h else NA_real_
 
@@ -533,7 +535,7 @@ fbc_p0_payload <- function(cfg){
       mc_policy_ok=NULL,
       business_break_even_margin_eur=be_margin,
       business_break_even_ok=is.finite(be_margin) && be_margin>=0,
-      employee_break_even_ok=if(isTRUE(state$employee$direct_billing)) is.finite(emp_be) && state$employee$available_hours_month>=emp_be else TRUE,
+      employee_break_even_ok=if(isTRUE(state$employee$direct_billing)) is.finite(emp_be) && state$employee$billable_hours_month>=emp_be else TRUE,
       capital_service_ratio=dscr,
       capital_service_ok=if(is.null(dscr)) TRUE else dscr>=1
     ),
@@ -551,9 +553,11 @@ fbc_p0_payload <- function(cfg){
         applicable=isTRUE(state$employee$direct_billing),
         customer_price=state$employee$customer_price,
         personnel_cost_month=pc,
-        billable_hours=state$employee$available_hours_month,
+        billable_hours=state$employee$billable_hours_month,
+        revenue_month=emp_rev,
+        result_contribution_month=emp_rev-pc,
         break_even_hours=emp_be,
-        hours_above_break_even=if(isTRUE(state$employee$direct_billing)) state$employee$available_hours_month-emp_be else NULL
+        hours_above_break_even=if(isTRUE(state$employee$direct_billing)) state$employee$billable_hours_month-emp_be else NULL
       )
     ),
     financing=fbc_current_financing_payload(state),
