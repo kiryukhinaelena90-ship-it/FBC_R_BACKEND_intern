@@ -51,13 +51,20 @@ evaluate_point21 <- function(
     stop("operating_costs müssen vollständig, endlich und >= 0 sein.")
   }
 
-  owner_revenue <- owner_price * owner_hours
-
-  employee_revenue <- if (isTRUE(state$employee$direct_billing)) {
-    employee_customer_price * employee_billable_hours
-  } else {
-    0
+  if(!exists("fbc_demand_snapshot25", mode="function")){
+    stop("fbc_demand_snapshot25() fehlt. 25_price_elasticity.R zuerst laden.")
   }
+
+  demand <- fbc_demand_snapshot25(
+    base_state = state,
+    owner_price = owner_price,
+    owner_planned_hours = owner_hours,
+    employee_price = employee_customer_price,
+    employee_planned_hours = employee_billable_hours
+  )
+
+  owner_revenue <- as.numeric(demand$owner$revenue_month)
+  employee_revenue <- as.numeric(demand$employee$revenue_month)
 
   operating_total <- sum(operating_costs)
   personnel_cost <- state$employee$personnel_cost_month
@@ -78,6 +85,11 @@ evaluate_point21 <- function(
   list(
     owner_revenue = owner_revenue,
     employee_revenue = employee_revenue,
+    owner_planned_hours = as.numeric(owner_hours),
+    owner_expected_hours = as.numeric(demand$owner$expected_hours),
+    employee_planned_hours = as.numeric(employee_billable_hours),
+    employee_expected_hours = as.numeric(demand$employee$expected_hours),
+    demand = demand,
     operating_total = operating_total,
     personnel_cost = personnel_cost,
     financing_result_cost = financing_result_cost,
@@ -157,7 +169,7 @@ build_differential_influence21 <- function(
     upper = hours_max
   )
 
-  # Exact interaction for revenue = price * hours.
+  # Numerical interaction under the constant-elasticity demand model.
   d2_price_hours <- cross_partial21(
     function(p, h) evaluate_point21(
       state, owner_price = p, owner_hours = h,
@@ -214,14 +226,38 @@ build_differential_influence21 <- function(
   )
 
   # Employee variables are diagnostic only unless explicitly unlocked.
+  # Their local effects are evaluated through the same elasticity-aware
+  # point evaluator used by the optimizer.
   employee_price_derivative <- if (isTRUE(state$employee$direct_billing)) {
-    state$employee$billable_hours_month
+    finite_diff21(
+      function(p) evaluate_point21(
+        state,
+        employee_customer_price = p,
+        employee_billable_hours = state$employee$billable_hours_month,
+        owner_pension_month = owner_pension_month,
+        tax_month = tax_month
+      )$net_available,
+      x0 = state$employee$customer_price,
+      lower = 0,
+      upper = Inf
+    )
   } else {
     0
   }
 
   employee_hours_derivative <- if (isTRUE(state$employee$direct_billing)) {
-    state$employee$customer_price
+    finite_diff21(
+      function(h) evaluate_point21(
+        state,
+        employee_customer_price = state$employee$customer_price,
+        employee_billable_hours = h,
+        owner_pension_month = owner_pension_month,
+        tax_month = tax_month
+      )$net_available,
+      x0 = state$employee$billable_hours_month,
+      lower = 0,
+      upper = Inf
+    )
   } else {
     0
   }
@@ -239,7 +275,7 @@ build_differential_influence21 <- function(
   )
 
   list(
-    schema_version = "21.0",
+    schema_version = "21.1",
     base_net = base$net_available,
     main = main,
     operating_costs = cost_derivatives,
@@ -248,12 +284,12 @@ build_differential_influence21 <- function(
       variable_1 = "owner_price",
       variable_2 = "owner_hours",
       cross_partial_net = d2_price_hours,
-      interpretation = "Preis und Stunden wirken gemeinsam multiplikativ auf den Inhaber-Umsatz.",
+      interpretation = "Preis und geplante Stunden wirken gemeinsam über die konstante Preiselastizität auf den erwarteten Inhaber-Umsatz.",
       stringsAsFactors = FALSE
     ),
     financing_role = "alternative_only",
     note = paste(
-      "Lokale Ableitungen beschreiben die marginale Wirkung am aktuellen Punkt.",
+      "Lokale Ableitungen beschreiben die marginale Wirkung am aktuellen Punkt unter der Preiselastizität epsilon = -0.60.",
       "Globale Unsicherheit/Sobol folgt erst nach Anbindung des Statistik- und Unsicherheitslayers."
     )
   )

@@ -99,7 +99,7 @@ if (
   if (!length(vars)) stop("Keine bestätigten Optimierungshebel mit numerischen Grenzen.")
   reg <- do.call(rbind,vars); rownames(reg)<-NULL
 
-  eval_x <- function(x) {
+  point_x <- function(x) {
     names(x)<-reg$name
     price <- if ("owner_price"%in%names(x)) x["owner_price"] else state$owner$price
     hours <- if ("owner_hours"%in%names(x)) x["owner_hours"] else state$owner$billable_hours_month
@@ -111,35 +111,43 @@ if (
     ep <- if ("employee_customer_price"%in%names(x)) x["employee_customer_price"] else state$employee$customer_price
     eh <- if ("employee_billable_hours"%in%names(x)) x["employee_billable_hours"] else state$employee$billable_hours_month
 
-    pt <- evaluate_point21(
-  state=state,
-  owner_price=price,
-  owner_hours=hours,
-  operating_costs=costs,
-  employee_customer_price=ep,
-  employee_billable_hours=eh,
-  owner_pension_month=0,
-  tax_month=0
-)
+    evaluate_point21(
+      state=state,
+      owner_price=price,
+      owner_hours=hours,
+      operating_costs=costs,
+      employee_customer_price=ep,
+      employee_billable_hours=eh,
+      owner_pension_month=0,
+      tax_month=0
+    )
+  }
 
-if(exists("fbc_financial_point24", mode="function")){
+  eval_x <- function(x) {
+    pt <- point_x(x)
 
-  gross_before_owner_protection_tax <-
-    pt$net_available + state$owner$insurance_month
+    if(exists("fbc_financial_point24", mode="function")){
+      gross_before_owner_protection_tax <-
+        pt$result_before_owner_protection_tax
 
-  fin <- fbc_financial_point24(
-    gross_before_owner_protection_tax,
-    state$owner,
-    legal_form =
-      state$legal_form %||% "freelance",
-    trade_tax_rate =
-      state$trade_tax_rate %||% 0
-  )
+      fin <- fbc_financial_point24(
+        gross_before_owner_protection_tax,
+        state$owner,
+        legal_form =
+          state$legal_form %||% "freelance",
+        trade_tax_rate =
+          state$trade_tax_rate %||% 0
+      )
 
-  return(fin$net_available)
-}
+      return(fin$net_available)
+    }
 
-pt$net_available
+    pt$net_available
+  }
+
+  demand_details <- function(x){
+    pt <- point_x(x)
+    pt$demand
   }
 
   # Scale-free movement from current state.
@@ -165,8 +173,18 @@ pt$net_available
     }
   }
 
-  list(registry=reg, evaluate=eval_x, objective=obj,
-       desired_net=desired_net, objective_mode=objective_mode)
+  list(
+    registry=reg,
+    evaluate=eval_x,
+    objective=obj,
+    desired_net=desired_net,
+    objective_mode=objective_mode,
+    demand_model=list(
+      model="constant_price_elasticity",
+      epsilon=if(exists("FBC_PRICE_ELASTICITY25")) FBC_PRICE_ELASTICITY25 else -0.60
+    ),
+    demand_details=demand_details
+  )
 }
 
 solve_optimizer26 <- function(problem) {

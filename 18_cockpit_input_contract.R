@@ -48,6 +48,7 @@ FBC_COCKPIT_FIELD_MAP <- list(
     hours_week = "empOwnerHours",
     days_week = "empOwnerDays",
     vacation_days = "empOwnerVacation",
+    billable_hours_month = "empOwnerBillableHours",
     monthly_target = "empOwnerGoal",
     insurance_month = "empOwnerInsurance",
     pension_mode = "empPensionMode",
@@ -60,6 +61,7 @@ FBC_COCKPIT_FIELD_MAP <- list(
     days_week = "empDays",
     vacation_days = "empVacation",
     direct_billing = "empBillable",
+    billable_hours_month = "empBillableHours",
     customer_price = "empCustomerPrice"
   ),
   financing = c(
@@ -102,7 +104,8 @@ calc_employee_economics_v16 <- function(
     employer_addon_rate,
     direct_billing = FALSE,
     customer_price = 0,
-    extra_cost_month = 0
+    extra_cost_month = 0,
+    billable_hours_month = NULL
 ) {
   assert_num18(wage_hour, "wage_hour", 0)
   assert_num18(hours_week, "hours_week", 0)
@@ -112,6 +115,10 @@ calc_employee_economics_v16 <- function(
   assert_num18(employer_addon_rate, "employer_addon_rate", 0)
   assert_num18(customer_price, "customer_price", 0)
   assert_num18(extra_cost_month, "extra_cost_month", 0)
+
+  if(!is.null(billable_hours_month)){
+    assert_num18(billable_hours_month, "billable_hours_month", 0)
+  }
 
   contract_hours_month <- hours_week * 52 / 12
   available_hours_month <- calc_monthly_capacity_v16(
@@ -126,8 +133,19 @@ calc_employee_economics_v16 <- function(
   personnel_cost_month <-
     gross_month + employer_addons_month + extra_cost_month
 
-  revenue_month <- if (isTRUE(direct_billing)) {
-    customer_price * available_hours_month
+  # Physical/paid capacity is not customer demand.
+  # Revenue is based only on explicitly supplied commercial billable hours.
+  commercial_billable_hours <- if(
+    isTRUE(direct_billing) &&
+    !is.null(billable_hours_month)
+  ){
+    max(0, as.numeric(billable_hours_month))
+  } else {
+    0
+  }
+
+  revenue_month <- if(isTRUE(direct_billing)) {
+    customer_price * commercial_billable_hours
   } else {
     0
   }
@@ -135,6 +153,10 @@ calc_employee_economics_v16 <- function(
   list(
     contract_hours_month = contract_hours_month,
     available_hours_month = available_hours_month,
+    paid_available_hours_month = available_hours_month,
+    billable_hours_month = commercial_billable_hours,
+    planned_billable_hours_month = commercial_billable_hours,
+    expected_billable_hours_month = commercial_billable_hours,
     gross_month = gross_month,
     employer_addons_month = employer_addons_month,
     personnel_cost_month = personnel_cost_month,
@@ -284,10 +306,16 @@ build_cockpit_decision_state18 <- function(
     employer_addon_rate = employer_addon_rate,
     direct_billing = employee$direct_billing,
     customer_price = employee$customer_price,
-    extra_cost_month = employee$extra_cost_month %||% 0
+    extra_cost_month = employee$extra_cost_month %||% 0,
+    billable_hours_month = employee$billable_hours_month %||% NULL
   )
 
   fin <- do.call(calc_financing_split_v16, financing)
+
+  employee_state <- employee
+  for(nm in names(emp_econ)){
+    employee_state[[nm]] <- emp_econ[[nm]]
+  }
 
   list(
     schema_version = "18.0",
@@ -298,13 +326,18 @@ build_cockpit_decision_state18 <- function(
       days_week = owner$days_week,
       vacation_days = owner$vacation_days,
       available_hours_month = owner_capacity,
+      physical_available_hours_month = owner_capacity,
+      billable_hours_month = owner$billable_hours_month %||% 0,
+      planned_billable_hours_month = owner$billable_hours_month %||% 0,
+      expected_billable_hours_month = owner$billable_hours_month %||% 0,
+      revenue_month = owner$price * (owner$billable_hours_month %||% 0),
       monthly_target = owner$monthly_target,
       insurance_month = owner$insurance_month,
       pension_mode = owner$pension_mode,
       pension_fixed_month = owner$pension_fixed_month
     ),
     operating_costs = operating_costs,
-    employee = c(employee, emp_econ),
+    employee = employee_state,
     financing = fin,
     optimization_eligibility = list(
       price = TRUE,

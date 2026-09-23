@@ -48,6 +48,34 @@ fbc_employee_billable_hours19 <- function(state) {
   as.numeric(x)
 }
 
+# Expected/realized billable hours can differ from planned billable hours
+# after a price change. Planned hours remain the optimization lever.
+fbc_owner_expected_hours19 <- function(state) {
+  x <- state$owner$expected_billable_hours_month
+  if(!is.null(x) && is.finite(as.numeric(x))) return(max(0,as.numeric(x)))
+  fbc_owner_billable_hours19(state)
+}
+
+fbc_employee_expected_hours19 <- function(state) {
+  if(!isTRUE(state$employee$direct_billing)) return(0)
+  x <- state$employee$expected_billable_hours_month
+  if(!is.null(x) && is.finite(as.numeric(x))) return(max(0,as.numeric(x)))
+  fbc_employee_billable_hours19(state)
+}
+
+fbc_owner_revenue19 <- function(state) {
+  x <- state$owner$revenue_month
+  if(!is.null(x) && is.finite(as.numeric(x))) return(as.numeric(x))
+  state$owner$price * fbc_owner_expected_hours19(state)
+}
+
+fbc_employee_revenue19 <- function(state) {
+  if(!isTRUE(state$employee$direct_billing)) return(0)
+  x <- state$employee$revenue_month
+  if(!is.null(x) && is.finite(as.numeric(x))) return(as.numeric(x))
+  state$employee$customer_price * fbc_employee_expected_hours19(state)
+}
+
 # Explicit decision bounds. Nothing is guessed.
 # For each cost line, controllable=TRUE is required before optimization may change it.
 # min_value/max_value are absolute monthly euro bounds.
@@ -113,9 +141,8 @@ calc_current_business_result19 <- function(
   assert_nonneg19(owner_pension_month, "owner_pension_month")
   assert_nonneg19(tax_month, "tax_month")
 
-  owner_revenue <-
-    state$owner$price * fbc_owner_billable_hours19(state)
-  employee_revenue <- state$employee$revenue_month
+  owner_revenue <- fbc_owner_revenue19(state)
+  employee_revenue <- fbc_employee_revenue19(state)
   operating <- sum(state$operating_costs)
   personnel <- state$employee$personnel_cost_month
   financing_result <- state$financing$interest_plus_fees_month
@@ -178,7 +205,7 @@ calc_reality_break_even19 <- function(
     verfuegbare_einheiten_monat = business_available_units_month
   )
 
-  emp_hours <- fbc_employee_billable_hours19(state)
+  emp_hours <- fbc_employee_expected_hours19(state)
   emp_price <- state$employee$customer_price
   emp_cost <- state$employee$personnel_cost_month
   emp_db <- emp_price - employee_variable_cost_per_hour

@@ -13,6 +13,8 @@
 #   deterministic/optimization layer.
 # ==========================================
 
+`%||%` <- function(a,b) if(is.null(a) || length(a)==0L) b else a
+
 FBC_COST_KEYS29 <- c(
   "office","energy","vehicle","fuel","software",
   "accounting","business_insurance","material","marketing","other"
@@ -143,18 +145,35 @@ build_all_cost_mc29 <- function(
     draws$financing_result_cost <- rep(state$financing$interest_plus_fees_month,n)
   }
 
-  owner_billable <- as.numeric(state$owner$billable_hours_month)
-  if(!is.finite(owner_billable)) stop("state$owner$billable_hours_month fehlt oder ist ungültig.")
+  owner_billable <- if(exists("fbc_state_expected_owner_hours25", mode="function")){
+    fbc_state_expected_owner_hours25(state)
+  } else {
+    as.numeric(state$owner$expected_billable_hours_month %||% state$owner$billable_hours_month)
+  }
+  if(!is.finite(owner_billable)) stop("Erwartete Inhaber-Billable-Hours fehlen oder sind ungültig.")
 
   employee_billable <- if(isTRUE(state$employee$direct_billing)) {
-    x <- as.numeric(state$employee$billable_hours_month)
-    if(!is.finite(x)) stop("state$employee$billable_hours_month fehlt oder ist ungültig.")
+    x <- if(exists("fbc_state_expected_employee_hours25", mode="function")){
+      fbc_state_expected_employee_hours25(state)
+    } else {
+      as.numeric(state$employee$expected_billable_hours_month %||% state$employee$billable_hours_month)
+    }
+    if(!is.finite(x)) stop("Erwartete Mitarbeiter-Billable-Hours fehlen oder sind ungültig.")
     x
   } else 0
 
-  owner_revenue <- state$owner$price * owner_billable
+  owner_revenue <- if(exists("fbc_state_owner_revenue25", mode="function")){
+    fbc_state_owner_revenue25(state)
+  } else {
+    state$owner$price * owner_billable
+  }
+
   employee_revenue <- if(isTRUE(state$employee$direct_billing)) {
-    state$employee$customer_price * employee_billable
+    if(exists("fbc_state_employee_revenue25", mode="function")){
+      fbc_state_employee_revenue25(state)
+    } else {
+      state$employee$customer_price * employee_billable
+    }
   } else 0
 
   cost_cols <- paste0("cost_",FBC_COST_KEYS29)
@@ -175,12 +194,12 @@ build_all_cost_mc29 <- function(
   draws$target_reached <- draws$net_available>=state$owner$monthly_target
 
   list(
-    schema_version="29.0",
+    schema_version="29.1",
     draws=draws,
     exposure=exposure,
     labor_exposure=labor_exposed,
     interest_exposure=variable_finance,
-    note="Alle 10 Kostenpositionen bleiben separat; nur vorhandene Statistikreihen bewegen sie."
+    note="Alle 10 Kostenpositionen bleiben separat; Umsatz nutzt die bereits preis-elastizitätsbereinigten erwarteten Stunden."
   )
 }
 

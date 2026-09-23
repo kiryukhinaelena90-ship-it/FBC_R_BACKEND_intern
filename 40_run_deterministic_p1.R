@@ -22,6 +22,7 @@ fbc_load_modules40 <- function(root=getwd(), envir){
     "11_business_break_even.R",
     "18_cockpit_input_contract.R",
     "19_reality_constraints_V2.R",
+    "25_price_elasticity.R",
     "21_differential_influence_V2.R",
     "26_constrained_optimizer_kkt.R",
     "27C_shapley_exact_bilinear_fix.R",
@@ -70,12 +71,13 @@ fbc_state_from_solution40 <- function(base_state, problem, solution){
   if("employee_billable_hours" %in% names(x))
     s$employee$billable_hours_month <- as.numeric(x["employee_billable_hours"])
 
-  s$employee$revenue_month <-
-    if(isTRUE(s$employee$direct_billing))
-      s$employee$customer_price * s$employee$billable_hours_month
-  else 0
+  if(!exists("fbc_apply_demand_to_state25", mode="function"))
+    stop("fbc_apply_demand_to_state25() fehlt. 25_price_elasticity.R zuerst laden.")
 
-  s
+  fbc_apply_demand_to_state25(
+    state=s,
+    base_state=base_state
+  )
 }
 
 fbc_business_break_even40 <- function(
@@ -83,22 +85,36 @@ fbc_business_break_even40 <- function(
     variable_cost_keys,
     employee_variable_cost_per_hour=0
 ){
-  owner_h <- as.numeric(state$owner$billable_hours_month)
+  owner_h <- if(exists("fbc_state_expected_owner_hours25", mode="function"))
+    fbc_state_expected_owner_hours25(state)
+  else
+    as.numeric(state$owner$expected_billable_hours_month %||% state$owner$billable_hours_month)
 
-  emp_h <- if(isTRUE(state$employee$direct_billing))
-    as.numeric(state$employee$billable_hours_month)
-  else 0
+  emp_h <- if(isTRUE(state$employee$direct_billing)){
+    if(exists("fbc_state_expected_employee_hours25", mode="function"))
+      fbc_state_expected_employee_hours25(state)
+    else
+      as.numeric(state$employee$expected_billable_hours_month %||% state$employee$billable_hours_month)
+  } else 0
 
   units <- owner_h + emp_h
 
-  revenue <-
-    state$owner$price * owner_h +
-    if(isTRUE(state$employee$direct_billing))
+  owner_revenue <- if(exists("fbc_state_owner_revenue25", mode="function"))
+    fbc_state_owner_revenue25(state)
+  else
+    state$owner$price * owner_h
+
+  employee_revenue <- if(isTRUE(state$employee$direct_billing)){
+    if(exists("fbc_state_employee_revenue25", mode="function"))
+      fbc_state_employee_revenue25(state)
+    else
       state$employee$customer_price * emp_h
-  else 0
+  } else 0
+
+  revenue <- owner_revenue + employee_revenue
 
   if(!is.finite(units) || units <= 0 || !is.finite(revenue) || revenue < 0)
-    stop("Cannot calculate Business Break-even: invalid billable capacity/revenue.")
+    stop("Cannot calculate Business Break-even: invalid expected billable hours/revenue.")
 
   weighted_price <- revenue / units
 
@@ -133,7 +149,7 @@ fbc_business_break_even40 <- function(
 
     emp_ok <-
       is.finite(emp_be_hours) &&
-      emp_be_hours <= state$employee$billable_hours_month + 1e-8
+      emp_be_hours <= emp_h + 1e-8
   }
 
   list(
@@ -148,6 +164,7 @@ fbc_business_break_even40 <- function(
       break_even_hours = be_units,
       break_even_revenue = be_revenue,
       projected_revenue = revenue,
+      expected_billable_hours = units,
       safety_margin = safety_margin,
       reachable = reachable
     ),
@@ -157,18 +174,20 @@ fbc_business_break_even40 <- function(
       customer_price = state$employee$customer_price,
       variable_cost_per_hour = employee_variable_cost_per_hour,
       personnel_cost_month = state$employee$personnel_cost_month,
-      billable_hours = state$employee$billable_hours_month,
-      revenue_month = state$employee$customer_price * emp_h,
+      planned_billable_hours = state$employee$billable_hours_month,
+      billable_hours = emp_h,
+      expected_billable_hours = emp_h,
+      revenue_month = employee_revenue,
       variable_cost_month = employee_variable_cost_per_hour * emp_h,
       result_contribution_month =
-        state$employee$customer_price * emp_h -
+        employee_revenue -
         state$employee$personnel_cost_month -
         employee_variable_cost_per_hour * emp_h,
       break_even_hours = emp_be_hours,
       hours_above_break_even =
         if(isTRUE(state$employee$direct_billing))
-          state$employee$billable_hours_month - emp_be_hours
-      else NA_real_,
+          emp_h - emp_be_hours
+        else NA_real_,
       ok = emp_ok
     )
   )
@@ -293,8 +312,7 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
   # available_hours_month stays physical capacity; optimization uses billable_hours_month.
   state$owner$physical_available_hours_month <- state$owner$available_hours_month
   state$owner$billable_hours_month <-
-    max(0, as.numeric(cfg$owner$billable_hours_month %||%
-                        state$owner$available_hours_month))
+    max(0, as.numeric(cfg$owner$billable_hours_month %||% 0))
 
   state$employee$paid_available_hours_month <-
     as.numeric(cfg$employee$paid_hours_month %||%
@@ -302,8 +320,7 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
 
   state$employee$billable_hours_month <-
     if(isTRUE(state$employee$direct_billing))
-      max(0, as.numeric(cfg$employee$billable_hours_month %||%
-                          state$employee$available_hours_month))
+      max(0, as.numeric(cfg$employee$billable_hours_month %||% 0))
     else 0
 
   if(is.finite(as.numeric(cfg$employee$personnel_cost_month %||% NA_real_))){
@@ -311,10 +328,15 @@ state$trade_tax_rate <- cfg$trade_tax_rate %||% 0
       as.numeric(cfg$employee$personnel_cost_month)
   }
 
-  state$employee$revenue_month <-
-    if(isTRUE(state$employee$direct_billing))
-      state$employee$customer_price * state$employee$billable_hours_month
-  else 0
+  if(!exists("fbc_apply_demand_to_state25", mode="function"))
+    stop("fbc_apply_demand_to_state25() fehlt. 25_price_elasticity.R zuerst laden.")
+
+  # Factual state: price is unchanged, therefore expected billable hours equal
+  # the explicitly supplied commercial billable hours.
+  state <- fbc_apply_demand_to_state25(
+    state=state,
+    base_state=state
+  )
 
   state_rules <- state
   state_rules$owner$billable_hours_month <-
@@ -640,6 +662,7 @@ be_detail <- tryCatch(
       target_reached = isTRUE(fallback_target_reached),
       remaining_gap_eur = remaining_gap,
       remaining_gap_percent = remaining_gap_pct,
+      demand = if(is.function(problem$demand_details)) problem$demand_details(best_solution) else NULL,
       explanation = shapley
     ),
 
@@ -699,7 +722,8 @@ target_path = list(
       financing_separate = TRUE,
       target_feasible = isTRUE(fallback_target_reached),
       best_attainable_used = !isTRUE(fallback_target_reached),
-      fallback_corner_used = TRUE
+      fallback_corner_used = TRUE,
+      demand_model = problem$demand_model
     ),
 
     audit = list(
@@ -712,6 +736,7 @@ target_path = list(
       optimizer_executed = TRUE,
       demand_guard =
         "free capacity is not treated as demand",
+      demand_model = problem$demand_model,
 
       auxiliary_analysis = list(
         implementation_timing_ok =
@@ -890,13 +915,14 @@ target_path = list(
     methods_used = c(
       "R factual state",
       "confirmed production bounds",
-      "constrained KKT candidate pool",
+      "bounded nonlinear candidate pool",
       "deterministic post-decision validation",
       "economic ranking",
       "Shapley after selection",
       "Business Break-even",
       "Employee Break-even"
-    )
+    ),
+    demand_model = problem$demand_model
   )
 
   payload$audit <- list(
@@ -904,7 +930,8 @@ target_path = list(
     mc_executed = FALSE,
     optimizer_executed = TRUE,
     demand_guard =
-      "free capacity is not treated as demand"
+      "free capacity is not treated as demand",
+    demand_model = problem$demand_model
   )
 
      payload

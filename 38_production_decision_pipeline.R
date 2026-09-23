@@ -4,7 +4,7 @@
 # End-to-end production decision assembly AFTER candidate generation
 #
 # Connects:
-#   KKT candidate pool
+#   nonlinear bounded candidate pool
 #   -> post-decision validation
 #   -> economic ranking
 #   -> Shapley explanation
@@ -273,6 +273,12 @@ fbc_make_decision_payload38 <- function(
     market_context=financing_market_context
   )
 
+  demand_detail <- if(is.function(problem$demand_details)){
+    problem$demand_details(selected$solution)
+  } else {
+    NULL
+  }
+
   list(
     schema_version=schema_version,
     status =
@@ -291,6 +297,7 @@ fbc_make_decision_payload38 <- function(
       active_levers=selected$active_levers,
       changes=changes,
       projected_net=as.numeric(selected$projected_net),
+      demand=demand_detail,
       explanation=sh
     ),
 target_path=list(
@@ -315,9 +322,10 @@ target_path=list(
     break_even=be_detail,
     financing=fin,
     method=list(
-      candidate_generation="constrained KKT candidate pool",
+      candidate_generation="bounded nonlinear candidate pool",
       selection="hard business policy + Pareto + safety-first lexicographic ranking",
-      explanation="Shapley after selection",
+      explanation="exact Shapley on nonlinear problem evaluation",
+      demand=problem$demand_model,
       financing="separate alternative branch; never an operating KKT lever"
     )
   )

@@ -19,6 +19,7 @@ suppressPackageStartupMessages({
 
 ROOT <- normalizePath(getwd(), mustWork=TRUE)
 source(file.path(ROOT,"24_financial_net_adapter.R"), local=.GlobalEnv)
+source(file.path(ROOT,"25_price_elasticity.R"), local=.GlobalEnv)
 
 # Source factual-state modules once.
 source(file.path(ROOT,"18_cockpit_input_contract.R"), local=.GlobalEnv)
@@ -91,7 +92,6 @@ fbc_map_financing <- function(x){
     rate_pa=num1(x$rate_pa),
     months=max(1,round(num1(x$months,1))),
     fees_month=num1(x$fees_month),
-    one_time_fee=num1(x$one_time_fee),
     binding=as.character(x$binding %||% "fixed")
   )
 }
@@ -106,6 +106,7 @@ fbc_build_factual_state <- function(cfg){
       hours_week=num1(owner$hours_week),
       days_week=max(1,num1(owner$days_week,5)),
       vacation_days=num1(owner$vacation_days),
+      billable_hours_month=max(0,num1(owner$billable_hours_month)),
       monthly_target=num1(owner$monthly_target),
       insurance_month=num1(owner$insurance_month),
       pension_mode=as.character(owner$pension_mode %||% "none"),
@@ -119,6 +120,7 @@ fbc_build_factual_state <- function(cfg){
       days_week=max(1,num1(employee$days_week,5)),
       vacation_days=num1(employee$vacation_days),
       direct_billing=flag1(employee$direct_billing),
+      billable_hours_month=if(flag1(employee$direct_billing)) max(0,num1(employee$billable_hours_month)) else 0,
       customer_price=num1(employee$customer_price),
       extra_cost_month=num1(employee$extra_cost_month)
     ),
@@ -149,10 +151,15 @@ fbc_build_factual_state <- function(cfg){
     state$employee$personnel_cost_month <- factual_pc
   }
 
-  state$employee$revenue_month <-
-    if(flag1(employee$direct_billing)) num1(employee$customer_price)*emp_bill else 0
+  if(!exists("fbc_apply_demand_to_state25", mode="function"))
+    stop("fbc_apply_demand_to_state25() fehlt. 25_price_elasticity.R zuerst laden.")
 
-  state
+  # Factual P0 state: no price change, so expected hours equal the explicitly
+  # supplied commercial billable hours.
+  fbc_apply_demand_to_state25(
+    state=state,
+    base_state=state
+  )
 }
 # ============================================================
 # Sensitivity payload for Decision Support
@@ -171,15 +178,16 @@ fbc_sensitivity_payload <- function(state, cfg){
       operating_costs = state$operating_costs
   ){
 
-    owner_revenue <-
-      owner_price * owner_hours
+    demand <- fbc_demand_snapshot25(
+      base_state = state,
+      owner_price = owner_price,
+      owner_planned_hours = owner_hours,
+      employee_price = employee_price,
+      employee_planned_hours = employee_hours
+    )
 
-    employee_revenue <-
-      if(isTRUE(state$employee$direct_billing)){
-        employee_price * employee_hours
-      } else {
-        0
-      }
+    owner_revenue <- as.numeric(demand$owner$revenue_month)
+    employee_revenue <- as.numeric(demand$employee$revenue_month)
 
     result_before_owner_protection_tax <-
       owner_revenue +
@@ -422,10 +430,15 @@ fbc_sensitivity_payload <- function(state, cfg){
     dominant_label =
       dominant_label,
 
+    demand_model = list(
+      model = "constant_price_elasticity",
+      epsilon = FBC_PRICE_ELASTICITY25
+    ),
+
     note =
       paste(
         "Each factor is changed separately by 1 percent.",
-        "All other values remain unchanged.",
+        "Price changes include the constant demand response epsilon = -0.60.",
         "This analysis is diagnostic and is not an automatic recommendation."
       )
   )
@@ -450,8 +463,8 @@ fbc_current_financing_payload <- function(state){
 fbc_p0_payload <- function(cfg){
   state <- fbc_build_factual_state(cfg)
 
-  owner_rev <- state$owner$price * state$owner$billable_hours_month
-  emp_rev <- state$employee$revenue_month
+  owner_rev <- fbc_state_owner_revenue25(state)
+  emp_rev <- fbc_state_employee_revenue25(state)
   op <- sum(state$operating_costs)
   pc <- state$employee$personnel_cost_month
   fin_result <- state$financing$interest_plus_fees_month
@@ -468,8 +481,8 @@ fbc_p0_payload <- function(cfg){
   gap <- max(0,target-financial$net_available)
   gap_pct <- if(target>0) 100*gap/target else NA_real_
 
-  total_h <- state$owner$billable_hours_month +
-    if(isTRUE(state$employee$direct_billing)) state$employee$billable_hours_month else 0
+  total_h <- fbc_state_expected_owner_hours25(state) +
+    if(isTRUE(state$employee$direct_billing)) fbc_state_expected_employee_hours25(state) else 0
   revenue <- owner_rev+emp_rev
   weighted_price <- if(total_h>0) revenue/total_h else NA_real_
 
@@ -535,7 +548,7 @@ fbc_p0_payload <- function(cfg){
       mc_policy_ok=NULL,
       business_break_even_margin_eur=be_margin,
       business_break_even_ok=is.finite(be_margin) && be_margin>=0,
-      employee_break_even_ok=if(isTRUE(state$employee$direct_billing)) is.finite(emp_be) && state$employee$billable_hours_month>=emp_be else TRUE,
+      employee_break_even_ok=if(isTRUE(state$employee$direct_billing)) is.finite(emp_be) && fbc_state_expected_employee_hours25(state)>=emp_be else TRUE,
       capital_service_ratio=dscr,
       capital_service_ok=if(is.null(dscr)) TRUE else dscr>=1
     ),
@@ -553,11 +566,13 @@ fbc_p0_payload <- function(cfg){
         applicable=isTRUE(state$employee$direct_billing),
         customer_price=state$employee$customer_price,
         personnel_cost_month=pc,
-        billable_hours=state$employee$billable_hours_month,
+        planned_billable_hours=state$employee$billable_hours_month,
+        billable_hours=fbc_state_expected_employee_hours25(state),
+        expected_billable_hours=fbc_state_expected_employee_hours25(state),
         revenue_month=emp_rev,
         result_contribution_month=emp_rev-pc,
         break_even_hours=emp_be,
-        hours_above_break_even=if(isTRUE(state$employee$direct_billing)) state$employee$billable_hours_month-emp_be else NULL
+        hours_above_break_even=if(isTRUE(state$employee$direct_billing)) fbc_state_expected_employee_hours25(state)-emp_be else NULL
       )
     ),
     financing=fbc_current_financing_payload(state),
@@ -574,6 +589,7 @@ fbc_p0_payload <- function(cfg){
       financing_separate=TRUE,
       methods_used=c(
         "R factual state",
+        "constant price elasticity epsilon = -0.60",
         "2026 tax orientation",
         "Business Break-even",
         "Employee Break-even",
@@ -584,6 +600,7 @@ fbc_p0_payload <- function(cfg){
       path="P0",
       evidence_gate="no confirmed bounds -> no lever",
       demand_guard="free capacity is not treated as demand",
+      demand_model=list(model="constant_price_elasticity",epsilon=FBC_PRICE_ELASTICITY25),
       tax_disclosure_de=financial$disclosure_de,
       tax_disclosure_ru=financial$disclosure_ru,
       mc_executed=FALSE,

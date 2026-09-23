@@ -28,6 +28,8 @@
 # - principal repayment is NOT an expense/result cost.
 # ==========================================
 
+`%||%` <- function(a,b) if(is.null(a) || length(a)==0L) b else a
+
 assert_scalar22 <- function(x, name, lower = -Inf, upper = Inf) {
   if (length(x) != 1 || is.na(x) || !is.finite(x)) {
     stop(name, " muss ein endlicher numerischer Einzelwert sein.")
@@ -150,11 +152,21 @@ build_mc_business_draws22 <- function(
 
   operating_draw <- other_operating + energy_draw + fuel_draw
 
-  owner_revenue <-
-    state$owner$price * state$owner$available_hours_month
+  # Revenue must follow the commercial demand state, never physical capacity.
+  owner_revenue <- if(exists("fbc_state_owner_revenue25", mode="function")){
+    fbc_state_owner_revenue25(state)
+  } else {
+    h <- state$owner$expected_billable_hours_month %||% state$owner$billable_hours_month
+    state$owner$price * as.numeric(h)
+  }
 
   employee_revenue <- if (isTRUE(state$employee$direct_billing)) {
-    state$employee$customer_price * state$employee$available_hours_month
+    if(exists("fbc_state_employee_revenue25", mode="function")){
+      fbc_state_employee_revenue25(state)
+    } else {
+      h <- state$employee$expected_billable_hours_month %||% state$employee$billable_hours_month
+      state$employee$customer_price * as.numeric(h)
+    }
   } else {
     0
   }
@@ -239,7 +251,7 @@ build_statistical_bridge22 <- function(
   )
 
   list(
-    schema_version = "22.0",
+    schema_version = "22.1",
     draws = draws,
     summary = summarise_mc_business22(
       draws,

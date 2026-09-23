@@ -25,6 +25,7 @@ fbc_load_modules41 <- function(root=getwd(), envir){
     "11_business_break_even.R",
     "18_cockpit_input_contract.R",
     "24_financial_net_adapter.R",
+    "25_price_elasticity.R",
     "22_statistical_mc_bridge.R",
     "29_production_statistical_cost_layer.R"
   )
@@ -50,7 +51,7 @@ fbc_state_from_cfg41 <- function(cfg){
   state$owner$physical_available_hours_month <- state$owner$available_hours_month
   state$owner$billable_hours_month <- max(
     0,
-    as.numeric(cfg$owner$billable_hours_month %||% state$owner$available_hours_month)
+    as.numeric(cfg$owner$billable_hours_month %||% 0)
   )
 
   state$employee$paid_available_hours_month <- as.numeric(
@@ -60,7 +61,7 @@ fbc_state_from_cfg41 <- function(cfg){
   state$employee$billable_hours_month <- if(isTRUE(state$employee$direct_billing)) {
     max(
       0,
-      as.numeric(cfg$employee$billable_hours_month %||% state$employee$available_hours_month)
+      as.numeric(cfg$employee$billable_hours_month %||% 0)
     )
   } else 0
 
@@ -68,16 +69,20 @@ fbc_state_from_cfg41 <- function(cfg){
     state$employee$personnel_cost_month <- as.numeric(cfg$employee$personnel_cost_month)
   }
 
-  state$employee$revenue_month <- if(isTRUE(state$employee$direct_billing)) {
-    state$employee$customer_price * state$employee$billable_hours_month
-  } else 0
+  if(!exists("fbc_apply_demand_to_state25", mode="function"))
+    stop("fbc_apply_demand_to_state25() fehlt. 25_price_elasticity.R zuerst laden.")
 
-  state
+  fbc_apply_demand_to_state25(
+    state=state,
+    base_state=state
+  )
 }
 
 fbc_apply_payload_changes41 <- function(state, payload){
   changes <- payload$recommendation$changes %||% list()
   if(!length(changes)) return(state)
+
+  base_state <- state
 
   for(ch in changes){
     lever <- as.character(ch$lever %||% "")
@@ -98,11 +103,13 @@ fbc_apply_payload_changes41 <- function(state, payload){
     }
   }
 
-  state$employee$revenue_month <- if(isTRUE(state$employee$direct_billing)) {
-    state$employee$customer_price * state$employee$billable_hours_month
-  } else 0
+  if(!exists("fbc_apply_demand_to_state25", mode="function"))
+    stop("fbc_apply_demand_to_state25() fehlt. 25_price_elasticity.R zuerst laden.")
 
-  state
+  fbc_apply_demand_to_state25(
+    state=state,
+    base_state=base_state
+  )
 }
 
 fbc_empty_robustness41 <- function(reason=NULL){
@@ -278,7 +285,7 @@ fbc_run_post_p1_mc_41 <- function(
       p90 = as.numeric(quantile(net, .90, names=FALSE)),
       n = as.integer(length(net)),
       risk_drivers = fbc_mc_risk_drivers41(layer),
-      method = "post-P1 Monte Carlo on selected deterministic state with per-draw 2026 financial net adapter",
+      method = "post-P1 Monte Carlo on elasticity-adjusted selected state with per-draw 2026 financial net adapter",
       decision_reoptimized = FALSE
     )
 
