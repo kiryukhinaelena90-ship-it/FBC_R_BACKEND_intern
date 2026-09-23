@@ -139,13 +139,29 @@ fbc_business_break_even40 <- function(
 
   emp_be_hours <- NA_real_
   emp_ok <- TRUE
+  emp_util <- NULL
 
   if(isTRUE(state$employee$direct_billing)){
-    emp_db <- state$employee$customer_price - employee_variable_cost_per_hour
+    if(
+      !exists("fbc_employee_utilization19", mode="function") ||
+      !exists("fbc_employee_break_even_hours19", mode="function")
+    ){
+      stop(
+        "Employee utilization/break-even model fehlt. ",
+        "19_reality_constraints_V2.R zuerst laden."
+      )
+    }
 
-    emp_be_hours <- if(emp_db > 0)
-      state$employee$personnel_cost_month / emp_db
-    else Inf
+    emp_util <- fbc_employee_utilization19(
+      state,
+      billable_hours = emp_h
+    )
+
+    emp_be_hours <- fbc_employee_break_even_hours19(
+      state,
+      customer_price = state$employee$customer_price,
+      variable_cost_per_hour = employee_variable_cost_per_hour
+    )
 
     emp_ok <-
       is.finite(emp_be_hours) &&
@@ -177,12 +193,71 @@ fbc_business_break_even40 <- function(
       planned_billable_hours = state$employee$billable_hours_month,
       billable_hours = emp_h,
       expected_billable_hours = emp_h,
+
+      # Commercial revenue stays factual / elasticity-aware.
       revenue_month = employee_revenue,
       variable_cost_month = employee_variable_cost_per_hour * emp_h,
       result_contribution_month =
         employee_revenue -
         state$employee$personnel_cost_month -
         employee_variable_cost_per_hour * emp_h,
+
+      # Sustainable employee cost-coverage diagnostics.
+      effective_billable_hours =
+        if(!is.null(emp_util))
+          emp_util$effective_hours
+        else
+          0,
+
+      available_hours_month =
+        if(!is.null(emp_util))
+          emp_util$available_hours
+        else
+          NA_real_,
+
+      utilization_rate =
+        if(!is.null(emp_util))
+          emp_util$utilization_rate
+        else
+          NA_real_,
+
+      utilization_zone =
+        if(!is.null(emp_util))
+          emp_util$zone
+        else
+          "not_applicable",
+
+      utilization_model =
+        "piecewise_sustainable_billable_hours",
+
+      utilization_thresholds =
+        if(exists("FBC_EMPLOYEE_UTIL_THRESHOLDS19"))
+          FBC_EMPLOYEE_UTIL_THRESHOLDS19
+        else
+          c(0.70,0.80,0.85),
+
+      utilization_weights =
+        if(exists("FBC_EMPLOYEE_UTIL_WEIGHTS19"))
+          FBC_EMPLOYEE_UTIL_WEIGHTS19
+        else
+          c(0.90,1.00,0.75,0.50),
+
+      sustainable_revenue_month =
+        if(!is.null(emp_util))
+          state$employee$customer_price *
+          emp_util$effective_hours
+        else
+          0,
+
+      sustainable_result_contribution_month =
+        if(!is.null(emp_util))
+          state$employee$customer_price *
+          emp_util$effective_hours -
+          state$employee$personnel_cost_month -
+          employee_variable_cost_per_hour * emp_h
+        else
+          0,
+
       break_even_hours = emp_be_hours,
       hours_above_break_even =
         if(isTRUE(state$employee$direct_billing))

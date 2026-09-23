@@ -63,6 +63,211 @@ fbc_employee_expected_hours19 <- function(state) {
   fbc_employee_billable_hours19(state)
 }
 
+
+# ----------------------------------------------------------
+# Employee utilization model for sustainable cost coverage
+# ----------------------------------------------------------
+#
+# This is NOT a physical cap and does NOT alter commercial revenue.
+# It is used only for employee cost-coverage / break-even diagnostics.
+#
+# Marginal hour weights by billable utilization:
+#   0–70%   -> 0.90
+#   70–80%  -> 1.00
+#   80–85%  -> 0.75
+#   >85%    -> 0.50
+#
+# Hours above paid capacity are NOT forbidden. They stay in the
+# >85% segment and therefore receive the lower marginal weight.
+# ----------------------------------------------------------
+
+FBC_EMPLOYEE_UTIL_THRESHOLDS19 <- c(0.70, 0.80, 0.85)
+FBC_EMPLOYEE_UTIL_WEIGHTS19 <- c(0.90, 1.00, 0.75, 0.50)
+
+fbc_employee_capacity19 <- function(state) {
+  candidates <- suppressWarnings(as.numeric(c(
+    state$employee$paid_available_hours_month,
+    state$employee$available_hours_month
+  )))
+
+  candidates <- candidates[
+    is.finite(candidates) &
+    candidates > 0
+  ]
+
+  if(length(candidates)) candidates[1] else NA_real_
+}
+
+fbc_employee_weighted_hours19 <- function(
+    billable_hours,
+    available_hours
+) {
+  h <- suppressWarnings(as.numeric(billable_hours)[1])
+  a <- suppressWarnings(as.numeric(available_hours)[1])
+
+  if(!is.finite(h) || h < 0)
+    stop("billable_hours muss endlich und >= 0 sein.")
+
+  if(!is.finite(a) || a <= 0) {
+    return(list(
+      billable_hours = h,
+      available_hours = NA_real_,
+      utilization_rate = NA_real_,
+      effective_hours = FBC_EMPLOYEE_UTIL_WEIGHTS19[1] * h,
+      zone = "capacity_unknown"
+    ))
+  }
+
+  cuts <- c(
+    FBC_EMPLOYEE_UTIL_THRESHOLDS19 * a,
+    Inf
+  )
+
+  weights <- FBC_EMPLOYEE_UTIL_WEIGHTS19
+
+  weighted <- 0
+  lower <- 0
+
+  for(i in seq_along(weights)) {
+    upper <- cuts[i]
+    segment_end <- min(h, upper)
+    segment_hours <- max(0, segment_end - lower)
+
+    weighted <- weighted + weights[i] * segment_hours
+
+    if(h <= upper) break
+    lower <- upper
+  }
+
+  utilization <- h / a
+
+  zone <-
+    if(utilization < FBC_EMPLOYEE_UTIL_THRESHOLDS19[1]) {
+      "low"
+    } else if(utilization <= FBC_EMPLOYEE_UTIL_THRESHOLDS19[2]) {
+      "normal"
+    } else if(utilization <= FBC_EMPLOYEE_UTIL_THRESHOLDS19[3]) {
+      "high"
+    } else {
+      "overload"
+    }
+
+  list(
+    billable_hours = h,
+    available_hours = a,
+    utilization_rate = utilization,
+    effective_hours = weighted,
+    zone = zone
+  )
+}
+
+fbc_employee_utilization19 <- function(
+    state,
+    billable_hours = NULL
+) {
+  if(!isTRUE(state$employee$direct_billing)) {
+    return(list(
+      billable_hours = 0,
+      available_hours = NA_real_,
+      utilization_rate = NA_real_,
+      effective_hours = 0,
+      zone = "not_applicable"
+    ))
+  }
+
+  h <- if(is.null(billable_hours)) {
+    fbc_employee_expected_hours19(state)
+  } else {
+    suppressWarnings(as.numeric(billable_hours)[1])
+  }
+
+  fbc_employee_weighted_hours19(
+    billable_hours = h,
+    available_hours = fbc_employee_capacity19(state)
+  )
+}
+
+fbc_employee_break_even_hours19 <- function(
+    state,
+    customer_price = state$employee$customer_price,
+    variable_cost_per_hour = 0
+) {
+  if(!isTRUE(state$employee$direct_billing))
+    return(NA_real_)
+
+  price <- suppressWarnings(as.numeric(customer_price)[1])
+  variable_cost <- suppressWarnings(as.numeric(variable_cost_per_hour)[1])
+  personnel_cost <- suppressWarnings(
+    as.numeric(state$employee$personnel_cost_month)[1]
+  )
+
+  if(
+    !is.finite(price) ||
+    !is.finite(variable_cost) ||
+    !is.finite(personnel_cost) ||
+    price < 0 ||
+    variable_cost < 0 ||
+    personnel_cost < 0
+  ) {
+    stop("Ungültige Mitarbeiterwerte für Break-even.")
+  }
+
+  if(personnel_cost <= 0)
+    return(0)
+
+  a <- fbc_employee_capacity19(state)
+
+  if(!is.finite(a) || a <= 0) {
+    slope <-
+      price * FBC_EMPLOYEE_UTIL_WEIGHTS19[1] -
+      variable_cost
+
+    return(
+      if(slope > 0)
+        personnel_cost / slope
+      else
+        Inf
+    )
+  }
+
+  cuts <- c(
+    FBC_EMPLOYEE_UTIL_THRESHOLDS19 * a,
+    Inf
+  )
+
+  weights <- FBC_EMPLOYEE_UTIL_WEIGHTS19
+
+  deficit <- personnel_cost
+  lower <- 0
+
+  for(i in seq_along(weights)) {
+    upper <- cuts[i]
+    slope <- price * weights[i] - variable_cost
+
+    if(is.infinite(upper)) {
+      if(slope <= 0)
+        return(Inf)
+
+      return(
+        lower + deficit / slope
+      )
+    }
+
+    span <- upper - lower
+
+    if(slope > 0 && deficit <= slope * span) {
+      return(
+        lower + deficit / slope
+      )
+    }
+
+    deficit <- deficit - slope * span
+    lower <- upper
+  }
+
+  Inf
+}
+
 fbc_owner_revenue19 <- function(state) {
   x <- state$owner$revenue_month
   if(!is.null(x) && is.finite(as.numeric(x))) return(as.numeric(x))
@@ -208,24 +413,43 @@ calc_reality_break_even19 <- function(
   emp_hours <- fbc_employee_expected_hours19(state)
   emp_price <- state$employee$customer_price
   emp_cost <- state$employee$personnel_cost_month
-  emp_db <- emp_price - employee_variable_cost_per_hour
 
-  employee_be_hours <- if (
-    isTRUE(state$employee$direct_billing) &&
-    emp_db > 0
-  ) {
-    emp_cost / emp_db
-  } else if (isTRUE(state$employee$direct_billing)) {
-    Inf
-  } else {
-    NA_real_
-  }
+  emp_util <- fbc_employee_utilization19(
+    state,
+    billable_hours = emp_hours
+  )
+
+  employee_be_hours <- fbc_employee_break_even_hours19(
+    state,
+    customer_price = emp_price,
+    variable_cost_per_hour = employee_variable_cost_per_hour
+  )
+
+  sustainable_revenue <-
+    if(isTRUE(state$employee$direct_billing))
+      emp_price * emp_util$effective_hours
+    else
+      0
+
+  sustainable_contribution <-
+    sustainable_revenue -
+    emp_cost -
+    employee_variable_cost_per_hour * emp_hours
 
   list(
     business = business_be,
     employee = list(
       direct_billing = isTRUE(state$employee$direct_billing),
       billable_hours_month = emp_hours,
+      effective_billable_hours = emp_util$effective_hours,
+      available_hours_month = emp_util$available_hours,
+      utilization_rate = emp_util$utilization_rate,
+      utilization_zone = emp_util$zone,
+      utilization_model = "piecewise_sustainable_billable_hours",
+      utilization_thresholds = FBC_EMPLOYEE_UTIL_THRESHOLDS19,
+      utilization_weights = FBC_EMPLOYEE_UTIL_WEIGHTS19,
+      sustainable_revenue_month = sustainable_revenue,
+      sustainable_result_contribution_month = sustainable_contribution,
       break_even_hours = employee_be_hours,
       break_even_reachable = if (is.na(employee_be_hours)) {
         NA
