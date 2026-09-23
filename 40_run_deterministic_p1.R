@@ -137,6 +137,7 @@ fbc_business_break_even40 <- function(
   be_revenue <- if(reachable) be_units * weighted_price else Inf
   safety_margin <- revenue - be_revenue
 
+  emp_arithmetic_be_hours <- NA_real_
   emp_be_hours <- NA_real_
   emp_ok <- TRUE
   emp_util <- NULL
@@ -156,6 +157,13 @@ fbc_business_break_even40 <- function(
       state,
       billable_hours = emp_h
     )
+
+    emp_arithmetic_be_hours <-
+      fbc_employee_arithmetic_break_even_hours19(
+        state,
+        customer_price = state$employee$customer_price,
+        variable_cost_per_hour = employee_variable_cost_per_hour
+      )
 
     emp_be_hours <- fbc_employee_break_even_hours19(
       state,
@@ -234,13 +242,13 @@ fbc_business_break_even40 <- function(
         if(exists("FBC_EMPLOYEE_UTIL_THRESHOLDS19"))
           FBC_EMPLOYEE_UTIL_THRESHOLDS19
         else
-          c(0.70,0.80,0.85),
+          c(0.70,0.85,1.00),
 
       utilization_weights =
         if(exists("FBC_EMPLOYEE_UTIL_WEIGHTS19"))
           FBC_EMPLOYEE_UTIL_WEIGHTS19
         else
-          c(0.90,1.00,0.75,0.50),
+          c(0.95,1.00,0.85,0.65),
 
       sustainable_revenue_month =
         if(!is.null(emp_util))
@@ -258,6 +266,7 @@ fbc_business_break_even40 <- function(
         else
           0,
 
+      arithmetic_break_even_hours = emp_arithmetic_be_hours,
       break_even_hours = emp_be_hours,
       hours_above_break_even =
         if(isTRUE(state$employee$direct_billing))

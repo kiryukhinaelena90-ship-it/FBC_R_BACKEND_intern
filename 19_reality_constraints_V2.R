@@ -72,17 +72,17 @@ fbc_employee_expected_hours19 <- function(state) {
 # It is used only for employee cost-coverage / break-even diagnostics.
 #
 # Marginal hour weights by billable utilization:
-#   0–70%   -> 0.90
-#   70–80%  -> 1.00
-#   80–85%  -> 0.75
-#   >85%    -> 0.50
+#   0–70%    -> 0.95
+#   70–85%   -> 1.00
+#   85–100%  -> 0.85
+#   >100%    -> 0.65
 #
 # Hours above paid capacity are NOT forbidden. They stay in the
-# >85% segment and therefore receive the lower marginal weight.
+# >100% segment and therefore receive the lower marginal weight.
 # ----------------------------------------------------------
 
-FBC_EMPLOYEE_UTIL_THRESHOLDS19 <- c(0.70, 0.80, 0.85)
-FBC_EMPLOYEE_UTIL_WEIGHTS19 <- c(0.90, 1.00, 0.75, 0.50)
+FBC_EMPLOYEE_UTIL_THRESHOLDS19 <- c(0.70, 0.85, 1.00)
+FBC_EMPLOYEE_UTIL_WEIGHTS19 <- c(0.95, 1.00, 0.85, 0.65)
 
 fbc_employee_capacity19 <- function(state) {
   candidates <- suppressWarnings(as.numeric(c(
@@ -185,6 +185,37 @@ fbc_employee_utilization19 <- function(
     billable_hours = h,
     available_hours = fbc_employee_capacity19(state)
   )
+}
+
+
+fbc_employee_arithmetic_break_even_hours19 <- function(
+    state,
+    customer_price = state$employee$customer_price,
+    variable_cost_per_hour = 0
+) {
+  if(!isTRUE(state$employee$direct_billing))
+    return(NA_real_)
+
+  price <- suppressWarnings(as.numeric(customer_price)[1])
+  variable_cost <- suppressWarnings(as.numeric(variable_cost_per_hour)[1])
+  personnel_cost <- suppressWarnings(
+    as.numeric(state$employee$personnel_cost_month)[1]
+  )
+
+  if(
+    !is.finite(price) ||
+    !is.finite(variable_cost) ||
+    !is.finite(personnel_cost)
+  ) {
+    return(NA_real_)
+  }
+
+  db <- price - variable_cost
+
+  if(db <= 0)
+    return(Inf)
+
+  personnel_cost / db
 }
 
 fbc_employee_break_even_hours19 <- function(
@@ -419,6 +450,13 @@ calc_reality_break_even19 <- function(
     billable_hours = emp_hours
   )
 
+  employee_arithmetic_be_hours <-
+    fbc_employee_arithmetic_break_even_hours19(
+      state,
+      customer_price = emp_price,
+      variable_cost_per_hour = employee_variable_cost_per_hour
+    )
+
   employee_be_hours <- fbc_employee_break_even_hours19(
     state,
     customer_price = emp_price,
@@ -450,6 +488,7 @@ calc_reality_break_even19 <- function(
       utilization_weights = FBC_EMPLOYEE_UTIL_WEIGHTS19,
       sustainable_revenue_month = sustainable_revenue,
       sustainable_result_contribution_month = sustainable_contribution,
+      arithmetic_break_even_hours = employee_arithmetic_be_hours,
       break_even_hours = employee_be_hours,
       break_even_reachable = if (is.na(employee_be_hours)) {
         NA
