@@ -649,6 +649,7 @@ health_handler <- function(req, res) {
     status = "ok",
     service = "FUTURE Business Cockpit R backend",
     backend_version = "FBC_R_BACKEND_P0_1.0",
+    backend_build = "solo-mode-2026-09-24",
     p0 = TRUE,
 p1_runner_enabled = TRUE,
 p1_runner_trigger = "evidence_present",
