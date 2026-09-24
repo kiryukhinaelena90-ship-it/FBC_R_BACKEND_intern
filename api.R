@@ -496,11 +496,17 @@ fbc_p0_payload <- function(cfg){
   be_revenue <- if(is.finite(be_hours) && is.finite(weighted_price)) be_hours*weighted_price else Inf
   be_margin <- revenue-be_revenue
 
-  emp_be <- NA_real_
-  if(isTRUE(state$employee$direct_billing)){
-    ep <- state$employee$customer_price
-    emp_be <- if(ep>0) pc/ep else Inf
-  }
+emp_be <- NA_real_
+if(isTRUE(state$employee$direct_billing)){
+  if(!exists("fbc_employee_break_even_hours19", mode="function"))
+    stop("fbc_employee_break_even_hours19() fehlt. 19_reality_constraints_V2.R zuerst laden.")
+
+  emp_be <- fbc_employee_break_even_hours19(
+    state,
+    customer_price = state$employee$customer_price,
+    variable_cost_per_hour = num1(cfg$employee_variable_cost_per_hour, 0)
+  )
+}
 
   ds <- state$financing$debt_service_month
   free_before_ds <- before
