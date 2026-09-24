@@ -45,7 +45,10 @@ fbc_validate_request <- function(x){
   errors <- character()
   if(is.null(x) || !is.list(x)) return("body_missing")
   if(!identical(x$schema_version,"FBC_P1_COCKPIT_REQUEST_1.0")) errors <- c(errors,"schema_version")
-  if(!identical(x$mode,"owner_employee")) errors <- c(errors,"mode")
+ if(!identical(x$mode,"owner_employee") &&!identical(x$mode,"solo")
+){
+  errors <- c(errors,"mode")
+}
   for(k in c("owner","employee","operating_costs","financing")){
     if(is.null(x[[k]]) || !is.list(x[[k]])) errors <- c(errors,k)
   }
