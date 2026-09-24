@@ -417,27 +417,6 @@ fbc_sensitivity_payload <- function(state, cfg){
       NULL
 
 
-  owner_price_up_1pct <-
-    fbc_price_response25(
-      base_price = state$owner$price,
-      new_price = state$owner$price * 1.01,
-      planned_hours = state$owner$billable_hours_month
-    )
-
-  owner_price_down_1pct <-
-    fbc_price_response25(
-      base_price = state$owner$price,
-      new_price = state$owner$price * 0.99,
-      planned_hours = state$owner$billable_hours_month
-    )
-
-  owner_util_current <-
-    fbc_owner_utilization19(
-      state,
-      billable_hours = fbc_state_expected_owner_hours25(state)
-    )
-
-
   list(
     method =
       "local_1pct_financial_sensitivity",
@@ -456,20 +435,7 @@ fbc_sensitivity_payload <- function(state, cfg){
 
     demand_model = list(
       model = "constant_price_elasticity",
-      epsilon = FBC_PRICE_ELASTICITY25,
-      owner_price_higher_1pct = owner_price_up_1pct,
-      owner_price_lower_1pct = owner_price_down_1pct
-    ),
-
-    owner_utilization = list(
-      model = "piecewise_sustainable_billable_hours",
-      billable_hours = owner_util_current$billable_hours,
-      effective_hours = owner_util_current$effective_hours,
-      available_hours = owner_util_current$available_hours,
-      utilization_rate = owner_util_current$utilization_rate,
-      zone = owner_util_current$zone,
-      thresholds = FBC_OWNER_UTIL_THRESHOLDS19,
-      weights = FBC_OWNER_UTIL_WEIGHTS19
+      epsilon = FBC_PRICE_ELASTICITY25
     ),
 
     note =
@@ -518,15 +484,9 @@ fbc_p0_payload <- function(cfg){
   gap <- max(0,target-financial$net_available)
   gap_pct <- if(target>0) 100*gap/target else NA_real_
 
-  owner_h <- fbc_state_expected_owner_hours25(state)
-  employee_h <-
-    if(isTRUE(state$employee$direct_billing))
-      fbc_state_expected_employee_hours25(state)
-    else
-      0
-
-  total_h <- owner_h + employee_h
-  revenue <- owner_rev + emp_rev
+  total_h <- fbc_state_expected_owner_hours25(state) +
+    if(isTRUE(state$employee$direct_billing)) fbc_state_expected_employee_hours25(state) else 0
+  revenue <- owner_rev+emp_rev
   weighted_price <- if(total_h>0) revenue/total_h else NA_real_
 
   variable_keys <- as.character(unlist(cfg$variable_cost_keys %||% character()))
@@ -534,61 +494,10 @@ fbc_p0_payload <- function(cfg){
   variable_month <- if(length(variable_keys)) sum(state$operating_costs[variable_keys]) else 0
   variable_per_h <- if(total_h>0) variable_month/total_h else 0
   fixed_costs <- op-variable_month+pc+fin_result
-
-  solo_mode <- identical(as.character(cfg$mode %||% ""), "solo")
-
-  owner_util <-
-    fbc_owner_utilization19(
-      state,
-      billable_hours = owner_h
-    )
-
-  owner_arithmetic_be <-
-    fbc_owner_arithmetic_business_break_even_hours19(
-      state,
-      fixed_costs_month = fixed_costs,
-      owner_price = state$owner$price,
-      variable_cost_per_hour = variable_per_h
-    )
-
-  owner_sustainable_be <-
-    fbc_owner_business_break_even_hours19(
-      state,
-      fixed_costs_month = fixed_costs,
-      owner_price = state$owner$price,
-      variable_cost_per_hour = variable_per_h
-    )
-
-  owner_sustainable_revenue <-
-    state$owner$price * owner_util$effective_hours
-
-  owner_sustainable_result_margin <-
-    owner_sustainable_revenue -
-    variable_per_h * owner_h -
-    fixed_costs
-
-  if(solo_mode){
-    be_hours <- owner_sustainable_be
-    be_revenue <-
-      if(is.finite(be_hours) && is.finite(state$owner$price))
-        be_hours * state$owner$price
-      else
-        Inf
-    be_margin <-
-      if(is.finite(be_revenue))
-        revenue - be_revenue
-      else
-        -Inf
-    business_be_ok <-
-      is.finite(owner_sustainable_be) &&
-      owner_h >= owner_sustainable_be
-  } else {
-    db_h <- weighted_price-variable_per_h
-    be_hours <- if(is.finite(db_h) && db_h>0) fixed_costs/db_h else Inf
-    be_revenue <- if(is.finite(be_hours) && is.finite(weighted_price)) be_hours*weighted_price else Inf
-    be_margin <- revenue-be_revenue
-    business_be_ok <- is.finite(be_margin) && be_margin>=0
-  }
+  db_h <- weighted_price-variable_per_h
+  be_hours <- if(is.finite(db_h) && db_h>0) fixed_costs/db_h else Inf
+  be_revenue <- if(is.finite(be_hours) && is.finite(weighted_price)) be_hours*weighted_price else Inf
+  be_margin <- revenue-be_revenue
 
 emp_be <- NA_real_
 if(isTRUE(state$employee$direct_billing)){
@@ -617,16 +526,6 @@ dscr <- if(is.finite(ds) && ds>0) debt$debt_service_ratio else NULL
     ),
 
   current=list(
-      revenue=revenue,
-      owner_revenue=owner_rev,
-      employee_revenue=emp_rev,
-      operating_costs=op,
-      personnel_cost=pc,
-      financing_result_cost=fin_result,
-      result_before_owner_protection_tax=before,
-      insurance_month=financial$insurance_month,
-      pension_month=financial$pension_month,
-      tax_month=financial$tax_month,
       expected_net=financial$net_available,
       monthly_target=target,
       target_gap_eur=gap,
@@ -657,38 +556,20 @@ dscr <- if(is.finite(ds) && ds>0) debt$debt_service_ratio else NULL
       mc_target_probability=NULL,
       mc_policy_ok=NULL,
       business_break_even_margin_eur=be_margin,
-      business_break_even_ok=business_be_ok,
+      business_break_even_ok=is.finite(be_margin) && be_margin>=0,
       employee_break_even_ok=if(isTRUE(state$employee$direct_billing)) is.finite(emp_be) && fbc_state_expected_employee_hours25(state)>=emp_be else TRUE,
       capital_service_ratio=dscr,
       capital_service_ok=if(is.null(dscr)) TRUE else dscr>=1
     ),
     break_even=list(
       business=list(
-        model=if(solo_mode) "owner_piecewise_sustainable_billable_hours" else "aggregate_arithmetic_break_even",
         weighted_price_per_billable_hour=weighted_price,
         variable_cost_per_billable_hour=variable_per_h,
         fixed_result_costs_month=fixed_costs,
         break_even_hours=be_hours,
         break_even_revenue=be_revenue,
         projected_revenue=revenue,
-        safety_margin=be_margin,
-        sustainable_result_margin=if(solo_mode) owner_sustainable_result_margin else NULL
-      ),
-      owner=list(
-        applicable=TRUE,
-        price=state$owner$price,
-        physical_available_hours=owner_util$available_hours,
-        billable_hours=owner_h,
-        effective_billable_hours=owner_util$effective_hours,
-        utilization_rate=owner_util$utilization_rate,
-        utilization_zone=owner_util$zone,
-        utilization_model="piecewise_sustainable_billable_hours",
-        utilization_thresholds=FBC_OWNER_UTIL_THRESHOLDS19,
-        utilization_weights=FBC_OWNER_UTIL_WEIGHTS19,
-        arithmetic_break_even_hours=owner_arithmetic_be,
-        sustainable_break_even_hours=owner_sustainable_be,
-        sustainable_revenue_month=owner_sustainable_revenue,
-        sustainable_result_margin_month=owner_sustainable_result_margin
+        safety_margin=be_margin
       ),
       employee=list(
         applicable=isTRUE(state$employee$direct_billing),
@@ -718,10 +599,8 @@ dscr <- if(is.finite(ds) && ds>0) debt$debt_service_ratio else NULL
       methods_used=c(
         "R factual state",
         "constant price elasticity epsilon = -0.60",
-        "owner utilization weights 0.95 / 1.00 / 0.85 / 0.65",
         "2026 tax orientation",
         "Business Break-even",
-        "Owner sustainable Break-even",
         "Employee Break-even",
         if(isTRUE(state$financing$active)) "Kapitaldienst current-state" else NULL
       )
@@ -730,23 +609,7 @@ dscr <- if(is.finite(ds) && ds>0) debt$debt_service_ratio else NULL
       path="P0",
       evidence_gate="no confirmed bounds -> no lever",
       demand_guard="free capacity is not treated as demand",
-      demand_model=list(
-        model="constant_price_elasticity",
-        epsilon=FBC_PRICE_ELASTICITY25,
-        price_higher_means_expected_hours_lower=TRUE,
-        price_lower_means_expected_hours_higher=TRUE
-      ),
-      owner_utilization_model=list(
-        model="piecewise_sustainable_billable_hours",
-        thresholds=FBC_OWNER_UTIL_THRESHOLDS19,
-        weights=FBC_OWNER_UTIL_WEIGHTS19,
-        factual_revenue_unchanged=TRUE
-      ),
-      pension_model=list(
-        mode=state$owner$pension_mode,
-        monthly=financial$pension_month,
-        statutory_rate=if(identical(state$owner$pension_mode,"statutory")) 0.186 else NULL
-      ),
+      demand_model=list(model="constant_price_elasticity",epsilon=FBC_PRICE_ELASTICITY25),
       tax_disclosure_de=financial$disclosure_de,
       tax_disclosure_ru=financial$disclosure_ru,
       mc_executed=FALSE,
@@ -786,6 +649,7 @@ health_handler <- function(req, res) {
     status = "ok",
     service = "FUTURE Business Cockpit R backend",
     backend_version = "FBC_R_BACKEND_P0_1.0",
+    backend_build = "solo-mode-2026-09-24",
     p0 = TRUE,
 p1_runner_enabled = TRUE,
 p1_runner_trigger = "evidence_present",
@@ -815,15 +679,17 @@ analyze_handler <- function(req, res) {
 
   errors <- fbc_validate_request(cfg)
 
-  if (length(errors)) {
-    res$status <- 422
-    return(
-      list(
-        error = "invalid_fbc_request",
-        fields = as.list(errors)
-      )
+if (length(errors)) {
+  res$status <- 422
+  return(
+    list(
+      error = "invalid_fbc_request",
+      fields = as.list(errors),
+      received_mode = cfg$mode,
+      received_mode_type = typeof(cfg$mode)
     )
-  }
+  )
+}
 
   if (!fbc_has_evidence(cfg)) {
     return(fbc_p0_payload(cfg))
