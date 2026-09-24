@@ -444,7 +444,8 @@ state_rules$employee$billable_hours_month <-
   prod_rules <- fbc_build_production_rules37v2(
     state = state_rules,
     confirmed = cfg$confirmed_bounds,
-    cost_evidence = cfg$cost_evidence
+    cost_evidence = cfg$cost_evidence,
+    mode = cfg$mode %||% NULL
   )
 
   fbc_validate_production_rules37v2(prod_rules)

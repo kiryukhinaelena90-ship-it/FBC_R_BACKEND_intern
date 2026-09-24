@@ -344,9 +344,41 @@ fbc_make_bound37v2 <- function(name,current,lower,upper,source_type,reason,imple
   )
 }
 
-fbc_build_production_rules37v2 <- function(state,confirmed=list(),cost_evidence=list()){
-  emp <- fbc_resolve_employment_constraints37v2(state$employee %||% list())
-  if(!emp$valid) stop(paste(emp$issues,collapse="\n"))
+fbc_build_production_rules37v2 <- function(
+    state,
+    confirmed=list(),
+    cost_evidence=list(),
+    mode=NULL
+){
+  solo_mode <- identical(
+    tolower(trimws(as.character(mode %||% ""))),
+    "solo"
+  )
+
+  if(solo_mode){
+    # Solo has no employee contract. Employment-law validation must not
+    # interpret the technical zero-valued employee placeholder as a real job.
+    emp <- list(
+      valid=TRUE,
+      form="not_applicable",
+      issues=character(0),
+      warnings=character(0),
+      reclassification_required=FALSE,
+      wage_hour=NA_real_,
+      regular_monthly_pay=NA_real_,
+      status_monthly_pay_lower=NA_real_,
+      status_monthly_pay_upper=NA_real_,
+      max_hours_week=Inf,
+      max_paid_hours_month=Inf,
+      employee_wage_is_free_lever=FALSE,
+      employment_status_is_free_lever=FALSE
+    )
+  } else {
+    emp <- fbc_resolve_employment_constraints37v2(
+      state$employee %||% list()
+    )
+    if(!emp$valid) stop(paste(emp$issues,collapse="\n"))
+  }
 
   rows <- list()
 
