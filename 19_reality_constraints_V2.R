@@ -2,7 +2,7 @@
 # 19_reality_constraints.R
 # FUTURE Business Cockpit
 # Reality / feasibility checks BEFORE optimization
-# Scope: Inhaber/in + 1 Mitarbeiter/in
+# Scope: Solo + Inhaber/in + 1 Mitarbeiter/in
 # ==========================================
 #
 # Purpose:
@@ -61,6 +61,229 @@ fbc_employee_expected_hours19 <- function(state) {
   x <- state$employee$expected_billable_hours_month
   if(!is.null(x) && is.finite(as.numeric(x))) return(max(0,as.numeric(x)))
   fbc_employee_billable_hours19(state)
+}
+
+
+# ----------------------------------------------------------
+# Owner utilization model for sustainable cost coverage
+# ----------------------------------------------------------
+#
+# This is NOT a physical cap and does NOT alter factual/commercial revenue.
+# It is used only for owner/solo sustainability and break-even diagnostics.
+#
+# Marginal hour weights by billable utilization:
+#   0–70%    -> 0.95
+#   70–85%   -> 1.00
+#   85–100%  -> 0.85
+#   >100%    -> 0.65
+#
+# Hours above physical capacity are NOT forbidden. They stay in the
+# >100% segment and therefore receive the lower marginal weight.
+# ----------------------------------------------------------
+
+FBC_OWNER_UTIL_THRESHOLDS19 <- c(0.70, 0.85, 1.00)
+FBC_OWNER_UTIL_WEIGHTS19 <- c(0.95, 1.00, 0.85, 0.65)
+
+fbc_owner_capacity19 <- function(state) {
+  candidates <- suppressWarnings(as.numeric(c(
+    state$owner$physical_available_hours_month,
+    state$owner$available_hours_month
+  )))
+
+  candidates <- candidates[
+    is.finite(candidates) &
+    candidates > 0
+  ]
+
+  if(length(candidates)) candidates[1] else NA_real_
+}
+
+fbc_owner_weighted_hours19 <- function(
+    billable_hours,
+    available_hours
+) {
+  h <- suppressWarnings(as.numeric(billable_hours)[1])
+  a <- suppressWarnings(as.numeric(available_hours)[1])
+
+  if(!is.finite(h) || h < 0)
+    stop("billable_hours muss endlich und >= 0 sein.")
+
+  if(!is.finite(a) || a <= 0) {
+    return(list(
+      billable_hours = h,
+      available_hours = NA_real_,
+      utilization_rate = NA_real_,
+      effective_hours = FBC_OWNER_UTIL_WEIGHTS19[1] * h,
+      zone = "capacity_unknown"
+    ))
+  }
+
+  cuts <- c(
+    FBC_OWNER_UTIL_THRESHOLDS19 * a,
+    Inf
+  )
+
+  weights <- FBC_OWNER_UTIL_WEIGHTS19
+
+  weighted <- 0
+  lower <- 0
+
+  for(i in seq_along(weights)) {
+    upper <- cuts[i]
+    segment_end <- min(h, upper)
+    segment_hours <- max(0, segment_end - lower)
+
+    weighted <- weighted + weights[i] * segment_hours
+
+    if(h <= upper) break
+    lower <- upper
+  }
+
+  utilization <- h / a
+
+  zone <-
+    if(utilization < FBC_OWNER_UTIL_THRESHOLDS19[1]) {
+      "low"
+    } else if(utilization <= FBC_OWNER_UTIL_THRESHOLDS19[2]) {
+      "normal"
+    } else if(utilization <= FBC_OWNER_UTIL_THRESHOLDS19[3]) {
+      "high"
+    } else {
+      "overload"
+    }
+
+  list(
+    billable_hours = h,
+    available_hours = a,
+    utilization_rate = utilization,
+    effective_hours = weighted,
+    zone = zone
+  )
+}
+
+fbc_owner_utilization19 <- function(
+    state,
+    billable_hours = NULL
+) {
+  h <- if(is.null(billable_hours)) {
+    fbc_owner_expected_hours19(state)
+  } else {
+    suppressWarnings(as.numeric(billable_hours)[1])
+  }
+
+  fbc_owner_weighted_hours19(
+    billable_hours = h,
+    available_hours = fbc_owner_capacity19(state)
+  )
+}
+
+fbc_owner_arithmetic_business_break_even_hours19 <- function(
+    state,
+    fixed_costs_month,
+    owner_price = state$owner$price,
+    variable_cost_per_hour = 0
+) {
+  price <- suppressWarnings(as.numeric(owner_price)[1])
+  variable_cost <- suppressWarnings(as.numeric(variable_cost_per_hour)[1])
+  fixed_costs <- suppressWarnings(as.numeric(fixed_costs_month)[1])
+
+  if(
+    !is.finite(price) ||
+    !is.finite(variable_cost) ||
+    !is.finite(fixed_costs) ||
+    price < 0 ||
+    variable_cost < 0 ||
+    fixed_costs < 0
+  ) {
+    stop("Ungültige Inhaberwerte für Business Break-even.")
+  }
+
+  if(fixed_costs <= 0)
+    return(0)
+
+  db <- price - variable_cost
+
+  if(db <= 0)
+    return(Inf)
+
+  fixed_costs / db
+}
+
+fbc_owner_business_break_even_hours19 <- function(
+    state,
+    fixed_costs_month,
+    owner_price = state$owner$price,
+    variable_cost_per_hour = 0
+) {
+  price <- suppressWarnings(as.numeric(owner_price)[1])
+  variable_cost <- suppressWarnings(as.numeric(variable_cost_per_hour)[1])
+  fixed_costs <- suppressWarnings(as.numeric(fixed_costs_month)[1])
+
+  if(
+    !is.finite(price) ||
+    !is.finite(variable_cost) ||
+    !is.finite(fixed_costs) ||
+    price < 0 ||
+    variable_cost < 0 ||
+    fixed_costs < 0
+  ) {
+    stop("Ungültige Inhaberwerte für nachhaltigen Business Break-even.")
+  }
+
+  if(fixed_costs <= 0)
+    return(0)
+
+  a <- fbc_owner_capacity19(state)
+
+  if(!is.finite(a) || a <= 0) {
+    slope <-
+      price * FBC_OWNER_UTIL_WEIGHTS19[1] -
+      variable_cost
+
+    return(
+      if(slope > 0)
+        fixed_costs / slope
+      else
+        Inf
+    )
+  }
+
+  cuts <- c(
+    FBC_OWNER_UTIL_THRESHOLDS19 * a,
+    Inf
+  )
+
+  weights <- FBC_OWNER_UTIL_WEIGHTS19
+
+  deficit <- fixed_costs
+  lower <- 0
+
+  for(i in seq_along(weights)) {
+    upper <- cuts[i]
+    slope <- price * weights[i] - variable_cost
+
+    if(is.infinite(upper)) {
+      if(slope <= 0)
+        return(Inf)
+
+      return(
+        lower + deficit / slope
+      )
+    }
+
+    span <- upper - lower
+
+    if(slope > 0 && deficit <= slope * span) {
+      return(
+        lower + deficit / slope
+      )
+    }
+
+    deficit <- deficit - slope * span
+    lower <- upper
+  }
+
+  Inf
 }
 
 
@@ -441,6 +664,38 @@ calc_reality_break_even19 <- function(
     verfuegbare_einheiten_monat = business_available_units_month
   )
 
+  owner_hours <- fbc_owner_expected_hours19(state)
+  owner_price <- state$owner$price
+
+  owner_util <- fbc_owner_utilization19(
+    state,
+    billable_hours = owner_hours
+  )
+
+  owner_arithmetic_be_hours <-
+    fbc_owner_arithmetic_business_break_even_hours19(
+      state,
+      fixed_costs_month = business_be$fixkosten_monat,
+      owner_price = owner_price,
+      variable_cost_per_hour = business_variable_cost_per_unit
+    )
+
+  owner_be_hours <-
+    fbc_owner_business_break_even_hours19(
+      state,
+      fixed_costs_month = business_be$fixkosten_monat,
+      owner_price = owner_price,
+      variable_cost_per_hour = business_variable_cost_per_unit
+    )
+
+  owner_sustainable_revenue <-
+    owner_price * owner_util$effective_hours
+
+  owner_sustainable_result <-
+    owner_sustainable_revenue -
+    business_variable_cost_per_unit * owner_hours -
+    business_be$fixkosten_monat
+
   emp_hours <- fbc_employee_expected_hours19(state)
   emp_price <- state$employee$customer_price
   emp_cost <- state$employee$personnel_cost_month
@@ -476,6 +731,25 @@ calc_reality_break_even19 <- function(
 
   list(
     business = business_be,
+    owner = list(
+      billable_hours_month = owner_hours,
+      effective_billable_hours = owner_util$effective_hours,
+      available_hours_month = owner_util$available_hours,
+      utilization_rate = owner_util$utilization_rate,
+      utilization_zone = owner_util$zone,
+      utilization_model = "piecewise_sustainable_billable_hours",
+      utilization_thresholds = FBC_OWNER_UTIL_THRESHOLDS19,
+      utilization_weights = FBC_OWNER_UTIL_WEIGHTS19,
+      sustainable_revenue_month = owner_sustainable_revenue,
+      sustainable_result_margin_month = owner_sustainable_result,
+      arithmetic_break_even_hours = owner_arithmetic_be_hours,
+      break_even_hours = owner_be_hours,
+      break_even_reachable = if (is.na(owner_be_hours)) {
+        NA
+      } else {
+        owner_be_hours <= owner_hours
+      }
+    ),
     employee = list(
       direct_billing = isTRUE(state$employee$direct_billing),
       billable_hours_month = emp_hours,

@@ -2,7 +2,7 @@
 # 18_cockpit_input_contract.R
 # FUTURE Business Cockpit
 # Cockpit -> R canonical input/state contract
-# Scope: Inhaber/in + 1 Mitarbeiter/in only
+# Scope: Solo + Inhaber/in + 1 Mitarbeiter/in
 # ==========================================
 #
 # Purpose:

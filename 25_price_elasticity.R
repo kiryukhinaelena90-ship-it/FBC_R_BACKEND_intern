@@ -12,6 +12,9 @@
 #   at the factual/base price;
 # - expected_hours are the hours expected after the price response;
 # - if price is unchanged, expected_hours == planned_hours;
+# - with epsilon < 0, a higher price lowers expected hours and a lower price raises them;
+# - the same elasticity parameter applies in both directions, while the power function
+#   produces the mathematically corresponding directional response factor;
 # - no physical-capacity cap is introduced here;
 # - if the factual/base price is <= 0, elasticity is not applied because
 #   a price ratio is undefined. The planned hours are preserved and the
