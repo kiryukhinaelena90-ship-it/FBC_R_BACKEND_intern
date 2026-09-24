@@ -8,8 +8,8 @@
 #
 # Default behavior:
 # - factual/P0 response is enabled;
-# - no evidence => no optimizer lever;
-# - P1 runner is present but disabled unless FBC_ENABLE_P1_RUNNER=true.
+# - no evidence => factual P0 response with no optimizer lever;
+# - evidence present => P1 runner executes via 43_run_p1_mc_fazit.R.
 # ============================================================
 
 suppressPackageStartupMessages({
@@ -647,11 +647,8 @@ health_handler <- function(req, res) {
     service = "FUTURE Business Cockpit R backend",
     backend_version = "FBC_R_BACKEND_P0_1.0",
     p0 = TRUE,
-    p1_runner_enabled =
-      identical(
-        tolower(Sys.getenv("FBC_ENABLE_P1_RUNNER", "false")),
-        "true"
-      ),
+p1_runner_enabled = TRUE,
+p1_runner_trigger = "evidence_present",
     mc_file_present =
       file.exists(
         Sys.getenv(
