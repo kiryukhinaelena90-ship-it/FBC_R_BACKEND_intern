@@ -508,9 +508,9 @@ if(isTRUE(state$employee$direct_billing)){
   )
 }
 
-  ds <- state$financing$debt_service_month
-  free_before_ds <- before
-  dscr <- if(is.finite(ds) && ds>0) free_before_ds/ds else NULL
+ds <- state$financing$debt_service_month
+debt <- calc_current_debt_capacity19(state, revenue)
+dscr <- if(is.finite(ds) && ds>0) debt$debt_service_ratio else NULL
 
   list(
   schema_version="fbc_decision_payload_v1",
