@@ -678,15 +678,17 @@ analyze_handler <- function(req, res) {
 
   errors <- fbc_validate_request(cfg)
 
-  if (length(errors)) {
-    res$status <- 422
-    return(
-      list(
-        error = "invalid_fbc_request",
-        fields = as.list(errors)
-      )
+if (length(errors)) {
+  res$status <- 422
+  return(
+    list(
+      error = "invalid_fbc_request",
+      fields = as.list(errors),
+      received_mode = cfg$mode,
+      received_mode_type = typeof(cfg$mode)
     )
-  }
+  )
+}
 
   if (!fbc_has_evidence(cfg)) {
     return(fbc_p0_payload(cfg))
