@@ -194,7 +194,7 @@ fbc_sensitivity_payload <- function(state, cfg){
       employee_revenue -
       sum(operating_costs) -
       state$employee$personnel_cost_month -
-      state$financing$interest_plus_fees_month
+      
 
     financial <- fbc_financial_point24(
       result_before_owner_protection_tax,
