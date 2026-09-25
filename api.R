@@ -26,6 +26,7 @@ source(file.path(ROOT,"18_cockpit_input_contract.R"), local=.GlobalEnv)
 source(file.path(ROOT,"10_gesamtkosten_kapitaldienst.R"), local=.GlobalEnv)
 source(file.path(ROOT,"11_business_break_even.R"), local=.GlobalEnv)
 source(file.path(ROOT,"19_reality_constraints_V2.R"), local=.GlobalEnv)
+source(file.path(ROOT,"44_team_decision_support.R"), local=.GlobalEnv)
 
 `%||%` <- function(a,b) if(is.null(a) || length(a)==0L) b else a
 num1 <- function(x, default=0){
@@ -43,15 +44,47 @@ fbc_authorized <- function(req){
 
 fbc_validate_request <- function(x){
   errors <- character()
-  if(is.null(x) || !is.list(x)) return("body_missing")
-  if(!identical(x$schema_version,"FBC_P1_COCKPIT_REQUEST_1.0")) errors <- c(errors,"schema_version")
- if(!identical(x$mode,"owner_employee") &&!identical(x$mode,"solo")
-){
-  errors <- c(errors,"mode")
-}
-  for(k in c("owner","employee","operating_costs","financing")){
-    if(is.null(x[[k]]) || !is.list(x[[k]])) errors <- c(errors,k)
+
+  if(is.null(x) || !is.list(x))
+    return("body_missing")
+
+  if(!identical(x$schema_version,"FBC_P1_COCKPIT_REQUEST_1.0"))
+    errors <- c(errors,"schema_version")
+
+  allowed_modes <- c(
+    "solo",
+    "owner_employee",
+    "owner_team"
+  )
+
+  if(!as.character(x$mode %||% "") %in% allowed_modes)
+    errors <- c(errors,"mode")
+
+  common_required <- c(
+    "owner",
+    "operating_costs",
+    "financing"
+  )
+
+  for(k in common_required){
+    if(is.null(x[[k]]) || !is.list(x[[k]]))
+      errors <- c(errors,k)
   }
+
+  if(identical(x$mode,"owner_team")){
+    if(
+      is.null(x$employees) ||
+      !is.list(x$employees) ||
+      length(x$employees) < 1L ||
+      length(x$employees) > 5L
+    ){
+      errors <- c(errors,"employees")
+    }
+  } else {
+    if(is.null(x$employee) || !is.list(x$employee))
+      errors <- c(errors,"employee")
+  }
+
   unique(errors)
 }
 
@@ -165,6 +198,78 @@ fbc_build_factual_state <- function(cfg){
   )
 }
 # ============================================================
+# Единая оценка текущей / тестовой точки для P0-анализа
+# ============================================================
+#
+# Важно: эта функция использует ту же экономическую основу, что и P1:
+# - цена проходит через модель эластичности спроса из модуля 25;
+# - проценты и комиссии по финансированию остаются расходом результата;
+# - тело кредита не считается доходом;
+# - итоговый net_available рассчитывается существующим финансовым адаптером.
+# ============================================================
+
+fbc_eval_net_point <- function(
+    state,
+    cfg,
+    owner_price = state$owner$price,
+    owner_hours = state$owner$billable_hours_month,
+    employee_price = state$employee$customer_price,
+    employee_hours = state$employee$billable_hours_month,
+    operating_costs = state$operating_costs
+){
+
+  demand <- fbc_demand_snapshot25(
+    base_state = state,
+    owner_price = owner_price,
+    owner_planned_hours = owner_hours,
+    employee_price = employee_price,
+    employee_planned_hours = employee_hours
+  )
+
+  owner_revenue <- as.numeric(demand$owner$revenue_month)
+  employee_revenue <- as.numeric(demand$employee$revenue_month)
+
+  financing_result_cost <-
+    suppressWarnings(
+      as.numeric(
+        state$financing$interest_plus_fees_month %||% 0
+      )[1]
+    )
+
+  if(!is.finite(financing_result_cost))
+    financing_result_cost <- 0
+
+  result_before_owner_protection_tax <-
+    owner_revenue +
+    employee_revenue -
+    sum(operating_costs) -
+    state$employee$personnel_cost_month -
+    financing_result_cost
+
+  financial <- fbc_financial_point24(
+    result_before_owner_protection_tax,
+    state$owner,
+    legal_form =
+      as.character(
+        cfg$legal_form %||% "freelance"
+      ),
+    trade_tax_rate =
+      num1(cfg$trade_tax_rate)
+  )
+
+  list(
+    net_available = as.numeric(financial$net_available),
+    result_before_owner_protection_tax =
+      as.numeric(result_before_owner_protection_tax),
+    owner_revenue = owner_revenue,
+    employee_revenue = employee_revenue,
+    financing_result_cost = financing_result_cost,
+    demand = demand
+  )
+}
+
+
+# ============================================================
 # Sensitivity payload for Decision Support
 # Each factor is changed separately by 1%.
 # All other values remain unchanged.
@@ -180,37 +285,15 @@ fbc_sensitivity_payload <- function(state, cfg){
       employee_hours = state$employee$billable_hours_month,
       operating_costs = state$operating_costs
   ){
-
-    demand <- fbc_demand_snapshot25(
-      base_state = state,
+    fbc_eval_net_point(
+      state = state,
+      cfg = cfg,
       owner_price = owner_price,
-      owner_planned_hours = owner_hours,
+      owner_hours = owner_hours,
       employee_price = employee_price,
-      employee_planned_hours = employee_hours
-    )
-
-    owner_revenue <- as.numeric(demand$owner$revenue_month)
-    employee_revenue <- as.numeric(demand$employee$revenue_month)
-
-    result_before_owner_protection_tax <-
-      owner_revenue +
-      employee_revenue -
-      sum(operating_costs) -
-      state$employee$personnel_cost_month 
-      
-
-    financial <- fbc_financial_point24(
-      result_before_owner_protection_tax,
-      state$owner,
-      legal_form =
-        as.character(
-          cfg$legal_form %||% "freelance"
-        ),
-      trade_tax_rate =
-        num1(cfg$trade_tax_rate)
-    )
-
-    as.numeric(financial$net_available)
+      employee_hours = employee_hours,
+      operating_costs = operating_costs
+    )$net_available
   }
 
 
@@ -446,6 +529,587 @@ fbc_sensitivity_payload <- function(state, cfg){
       )
   )
 }
+
+# ============================================================
+# Ориентация перед вторым прогоном
+# ============================================================
+#
+# Задача этого слоя — не выбрать решение за пользователя, а показать,
+# какие показатели математически имеет смысл проверить в следующем шаге.
+#
+# Сравнение делается без произвольного score:
+# - цена: +1 % с учетом эластичности спроса;
+# - часы: +1 %, но только устойчивый маржинальный прирост часов
+#   учитывается при ранжировании;
+# - общие Betriebskosten: -1 %.
+#
+# Реальные границы изменения здесь не придумываются. Их пользователь
+# подтверждает в Handlungsspielräume перед P1-оптимизацией.
+# ============================================================
+
+fbc_decision_guidance_payload <- function(
+    state,
+    cfg,
+    employee_break_even_hours = NA_real_
+){
+
+  base_net <-
+    fbc_eval_net_point(
+      state = state,
+      cfg = cfg
+    )$net_available
+
+  candidates <- list()
+
+  add_candidate <- function(
+      actor,
+      actor_label,
+      lever,
+      lever_label,
+      direction,
+      changed_net,
+      test_change_pct,
+      reason_codes,
+      utilization = NULL,
+      feasibility_hint = "needs_user_confirmation",
+      raw_changed_net = changed_net,
+      employee_cost_coverage_improvement_hours = NULL
+  ){
+    guidance_effect_eur <-
+      as.numeric(changed_net) - as.numeric(base_net)
+
+    commercial_effect_eur <-
+      as.numeric(raw_changed_net) - as.numeric(base_net)
+
+    guidance_effect_pct <-
+      if(is.finite(base_net) && abs(base_net) > 1e-9){
+        100 * guidance_effect_eur / abs(base_net)
+      } else {
+        NA_real_
+      }
+
+    commercial_effect_pct <-
+      if(is.finite(base_net) && abs(base_net) > 1e-9){
+        100 * commercial_effect_eur / abs(base_net)
+      } else {
+        NA_real_
+      }
+
+    # До второго прогона мы не придумываем минимальный "значимый" эффект.
+    # Берем только строго положительные направления и затем ранжируем их.
+    if(!is.finite(guidance_effect_eur) || guidance_effect_eur <= 0)
+      return(invisible(NULL))
+
+    candidates[[length(candidates) + 1L]] <<-
+      list(
+        actor = actor,
+        actor_label = actor_label,
+        lever = lever,
+        lever_label = lever_label,
+        direction = direction,
+        test_change_pct = as.numeric(test_change_pct),
+
+        # guidance_* используется для ранжирования перед вторым прогоном.
+        guidance_net_effect_eur_1pct =
+          as.numeric(guidance_effect_eur),
+        guidance_net_effect_pct_1pct =
+          if(is.finite(guidance_effect_pct))
+            as.numeric(guidance_effect_pct)
+          else
+            NULL,
+
+        # commercial_* сохраняет фактический денежный эффект полного 1 %-шага.
+        # Для цены и расходов он совпадает с guidance_*; для часов guidance_*
+        # дополнительно учитывает маржинальный коэффициент загрузки.
+        commercial_net_effect_eur_1pct =
+          if(is.finite(commercial_effect_eur))
+            as.numeric(commercial_effect_eur)
+          else
+            NULL,
+        commercial_net_effect_pct_1pct =
+          if(is.finite(commercial_effect_pct))
+            as.numeric(commercial_effect_pct)
+          else
+            NULL,
+
+        # Совместимость с простым frontend: net_effect_* = guidance effect.
+        net_effect_eur_1pct = as.numeric(guidance_effect_eur),
+        net_effect_pct_1pct =
+          if(is.finite(guidance_effect_pct))
+            as.numeric(guidance_effect_pct)
+          else
+            NULL,
+
+        employee_cost_coverage_improvement_hours =
+          if(
+            !is.null(employee_cost_coverage_improvement_hours) &&
+            is.finite(as.numeric(employee_cost_coverage_improvement_hours)[1])
+          )
+            as.numeric(employee_cost_coverage_improvement_hours)[1]
+          else
+            NULL,
+
+        utilization = utilization,
+        feasibility_hint = feasibility_hint,
+        reason_codes = as.list(unique(reason_codes))
+      )
+
+    invisible(NULL)
+  }
+
+
+  # ----------------------------------------------------------
+  # 1. Цена владельца +1 %
+  # ----------------------------------------------------------
+  # Эффект цены всегда проходит через fbc_demand_snapshot25(),
+  # поэтому ожидаемые часы меняются по epsilon = FBC_PRICE_ELASTICITY25.
+
+  if(is.finite(as.numeric(state$owner$price)) && state$owner$price > 0){
+    owner_price_net <-
+      fbc_eval_net_point(
+        state = state,
+        cfg = cfg,
+        owner_price = state$owner$price * 1.01
+      )$net_available
+
+    add_candidate(
+      actor = "owner",
+      actor_label = "Inhaber/in",
+      lever = "owner_price",
+      lever_label = "Kundenpreis Inhaber/in",
+      direction = "increase",
+      changed_net = owner_price_net,
+      test_change_pct = 1,
+      reason_codes = c(
+        "positive_price_effect_after_elasticity"
+      )
+    )
+  }
+
+
+  # ----------------------------------------------------------
+  # 2. Оплачиваемые часы владельца +1 %
+  # ----------------------------------------------------------
+  # Коммерческая выручка остается фактической. Для ориентации мы лишь
+  # дисконтируем ДОПОЛНИТЕЛЬНЫЙ час коэффициентом устойчивой загрузки
+  # из модуля 19. Это не физический cap и не изменение факта выручки.
+
+  owner_h0 <- as.numeric(state$owner$billable_hours_month)
+
+  if(is.finite(owner_h0) && owner_h0 > 0){
+    owner_h1 <- owner_h0 * 1.01
+
+    owner_u0 <-
+      fbc_owner_utilization19(
+        state,
+        billable_hours = owner_h0
+      )
+
+    owner_u1 <-
+      fbc_owner_utilization19(
+        state,
+        billable_hours = owner_h1
+      )
+
+    raw_delta <- owner_h1 - owner_h0
+    effective_delta <-
+      max(
+        0,
+        as.numeric(owner_u1$effective_hours) -
+          as.numeric(owner_u0$effective_hours)
+      )
+
+    marginal_weight <-
+      if(raw_delta > 0) effective_delta / raw_delta else NA_real_
+
+    owner_util_payload <-
+      list(
+        utilization_rate =
+          if(is.finite(owner_u0$utilization_rate))
+            as.numeric(owner_u0$utilization_rate)
+          else
+            NULL,
+        utilization_zone = as.character(owner_u0$zone),
+        marginal_hour_weight =
+          if(is.finite(marginal_weight))
+            as.numeric(marginal_weight)
+          else
+            NULL,
+        available_hours_month =
+          if(is.finite(owner_u0$available_hours))
+            as.numeric(owner_u0$available_hours)
+          else
+            NULL
+      )
+
+    # При перегрузке (>100 %) дополнительные часы не выдаем как
+    # "возможный первый рычаг". При 85–100 % они остаются кандидатом,
+    # но их маржинальный эффект уже снижен коэффициентом 0.85.
+    if(!identical(as.character(owner_u0$zone), "overload")){
+      owner_hours_raw_net <-
+        fbc_eval_net_point(
+          state = state,
+          cfg = cfg,
+          owner_hours = owner_h1
+        )$net_available
+
+      owner_hours_net <-
+        fbc_eval_net_point(
+          state = state,
+          cfg = cfg,
+          owner_hours = owner_h0 + effective_delta
+        )$net_available
+
+      add_candidate(
+        actor = "owner",
+        actor_label = "Inhaber/in",
+        lever = "owner_hours",
+        lever_label = "Abrechenbare Stunden Inhaber/in",
+        direction = "increase",
+        changed_net = owner_hours_net,
+        raw_changed_net = owner_hours_raw_net,
+        test_change_pct = 1,
+        reason_codes = c(
+          "positive_hours_effect_with_utilization",
+          paste0("utilization_", as.character(owner_u0$zone))
+        ),
+        utilization = owner_util_payload,
+        feasibility_hint =
+          if(identical(as.character(owner_u0$zone), "capacity_unknown"))
+            "capacity_unknown"
+          else
+            "capacity_available"
+      )
+    }
+  }
+
+
+  # ----------------------------------------------------------
+  # 3–4. Цена и часы сотрудника
+  # ----------------------------------------------------------
+
+  employee_break_even_ok <- TRUE
+  employee_hours_gap <- 0
+
+  if(isTRUE(state$employee$direct_billing)){
+    employee_h0 <-
+      fbc_state_expected_employee_hours25(state)
+
+    if(is.finite(employee_break_even_hours)){
+      employee_break_even_ok <-
+        employee_h0 + 1e-9 >= employee_break_even_hours
+
+      employee_hours_gap <-
+        max(0, employee_break_even_hours - employee_h0)
+    }
+
+    employee_reason_prefix <-
+      if(isTRUE(employee_break_even_ok))
+        character(0)
+      else
+        "employee_cost_coverage_open"
+
+    if(
+      is.finite(as.numeric(state$employee$customer_price)) &&
+      state$employee$customer_price > 0
+    ){
+      employee_price_test <-
+        state$employee$customer_price * 1.01
+
+      employee_price_point <-
+        fbc_eval_net_point(
+          state = state,
+          cfg = cfg,
+          employee_price = employee_price_test
+        )
+
+      employee_price_net <-
+        employee_price_point$net_available
+
+      employee_price_be <-
+        fbc_employee_break_even_hours19(
+          state,
+          customer_price = employee_price_test,
+          variable_cost_per_hour =
+            num1(cfg$employee_variable_cost_per_hour, 0)
+        )
+
+      employee_current_margin_hours <-
+        if(is.finite(employee_break_even_hours))
+          employee_h0 - employee_break_even_hours
+        else
+          NA_real_
+
+      employee_price_margin_hours <-
+        if(is.finite(employee_price_be))
+          as.numeric(employee_price_point$demand$employee$expected_hours) -
+            employee_price_be
+        else
+          NA_real_
+
+      employee_price_coverage_improvement <-
+        if(
+          is.finite(employee_current_margin_hours) &&
+          is.finite(employee_price_margin_hours)
+        )
+          employee_price_margin_hours - employee_current_margin_hours
+        else
+          NA_real_
+
+      add_candidate(
+        actor = "employee",
+        actor_label = "Mitarbeiter/in",
+        lever = "employee_customer_price",
+        lever_label = "Kundenpreis Mitarbeiter/in",
+        direction = "increase",
+        changed_net = employee_price_net,
+        raw_changed_net = employee_price_net,
+        test_change_pct = 1,
+        employee_cost_coverage_improvement_hours =
+          employee_price_coverage_improvement,
+        reason_codes = c(
+          employee_reason_prefix,
+          "positive_price_effect_after_elasticity"
+        )
+      )
+    }
+
+    employee_plan_h0 <-
+      as.numeric(state$employee$billable_hours_month)
+
+    if(is.finite(employee_plan_h0) && employee_plan_h0 > 0){
+      employee_h1 <- employee_plan_h0 * 1.01
+
+      employee_u0 <-
+        fbc_employee_utilization19(
+          state,
+          billable_hours = employee_plan_h0
+        )
+
+      employee_u1 <-
+        fbc_employee_utilization19(
+          state,
+          billable_hours = employee_h1
+        )
+
+      raw_delta <- employee_h1 - employee_plan_h0
+      effective_delta <-
+        max(
+          0,
+          as.numeric(employee_u1$effective_hours) -
+            as.numeric(employee_u0$effective_hours)
+        )
+
+      marginal_weight <-
+        if(raw_delta > 0) effective_delta / raw_delta else NA_real_
+
+      employee_util_payload <-
+        list(
+          utilization_rate =
+            if(is.finite(employee_u0$utilization_rate))
+              as.numeric(employee_u0$utilization_rate)
+            else
+              NULL,
+          utilization_zone = as.character(employee_u0$zone),
+          marginal_hour_weight =
+            if(is.finite(marginal_weight))
+              as.numeric(marginal_weight)
+            else
+              NULL,
+          available_hours_month =
+            if(is.finite(employee_u0$available_hours))
+              as.numeric(employee_u0$available_hours)
+            else
+              NULL
+        )
+
+      if(!identical(as.character(employee_u0$zone), "overload")){
+        employee_hours_raw_net <-
+          fbc_eval_net_point(
+            state = state,
+            cfg = cfg,
+            employee_hours = employee_h1
+          )$net_available
+
+        employee_hours_net <-
+          fbc_eval_net_point(
+            state = state,
+            cfg = cfg,
+            employee_hours = employee_plan_h0 + effective_delta
+          )$net_available
+
+        employee_hours_coverage_improvement <-
+          if(is.finite(employee_break_even_hours))
+            employee_h1 - employee_plan_h0
+          else
+            NA_real_
+
+        add_candidate(
+          actor = "employee",
+          actor_label = "Mitarbeiter/in",
+          lever = "employee_billable_hours",
+          lever_label = "Abrechenbare Stunden Mitarbeiter/in",
+          direction = "increase",
+          changed_net = employee_hours_net,
+          raw_changed_net = employee_hours_raw_net,
+          test_change_pct = 1,
+          employee_cost_coverage_improvement_hours =
+            employee_hours_coverage_improvement,
+          reason_codes = c(
+            employee_reason_prefix,
+            "positive_hours_effect_with_utilization",
+            paste0("utilization_", as.character(employee_u0$zone))
+          ),
+          utilization = employee_util_payload,
+          feasibility_hint =
+            if(identical(as.character(employee_u0$zone), "capacity_unknown"))
+              "capacity_unknown"
+            else
+              "capacity_available"
+        )
+      }
+    }
+  }
+
+
+  # ----------------------------------------------------------
+  # 5. Betriebskosten gesamt -1 %
+  # ----------------------------------------------------------
+  # До подтверждения конкретных границ мы не утверждаем, что расходы
+  # реально можно снизить. Здесь это только математический кандидат
+  # для проверки пользователем.
+
+  operating_total <- sum(state$operating_costs)
+
+  if(is.finite(operating_total) && operating_total > 0){
+    costs_net <-
+      fbc_eval_net_point(
+        state = state,
+        cfg = cfg,
+        operating_costs = state$operating_costs * 0.99
+      )$net_available
+
+    add_candidate(
+      actor = "business",
+      actor_label = "Betrieb",
+      lever = "operating_costs",
+      lever_label = "Betriebskosten gesamt",
+      direction = "decrease",
+      changed_net = costs_net,
+      test_change_pct = -1,
+      reason_codes = c(
+        "positive_cost_reduction_effect"
+      )
+    )
+  }
+
+
+  # ----------------------------------------------------------
+  # Ранжирование без искусственного score
+  # ----------------------------------------------------------
+  # Поскольку каждый кандидат проверен одинаковым относительным шагом 1 %,
+  # сравниваем прямой прирост net_available в евро.
+
+  if(length(candidates)){
+    effects <-
+      vapply(
+        candidates,
+        function(x) as.numeric(x$guidance_net_effect_eur_1pct),
+        numeric(1)
+      )
+
+    ord <- order(effects, decreasing = TRUE, na.last = NA)
+    candidates <- candidates[ord]
+
+    for(i in seq_along(candidates))
+      candidates[[i]]$priority <- as.integer(i)
+  }
+
+  top_candidates <- head(candidates, 3L)
+
+
+  # ----------------------------------------------------------
+  # Отдельный локальный фокус на сотруднике
+  # ----------------------------------------------------------
+  # Если сотрудник не покрывает свои Personalkosten, эта проблема не должна
+  # потеряться только потому, что другой рычаг сильнее влияет на общий net.
+
+  employee_focus <- NULL
+
+  if(
+    isTRUE(state$employee$direct_billing) &&
+    !isTRUE(employee_break_even_ok)
+  ){
+    employee_candidates <-
+      Filter(
+        function(x) identical(x$actor, "employee"),
+        candidates
+      )
+
+    employee_focus_candidate <- NULL
+
+    if(length(employee_candidates)){
+      coverage_effects <-
+        vapply(
+          employee_candidates,
+          function(x){
+            z <- suppressWarnings(
+              as.numeric(
+                x$employee_cost_coverage_improvement_hours %||% NA_real_
+              )[1]
+            )
+            if(is.finite(z)) z else -Inf
+          },
+          numeric(1)
+        )
+
+      if(any(is.finite(coverage_effects) & coverage_effects > 0)){
+        employee_focus_candidate <-
+          employee_candidates[[which.max(coverage_effects)]]
+      }
+    }
+
+    employee_focus <-
+      list(
+        needed = TRUE,
+        cost_coverage_ok = FALSE,
+        hours_gap = as.numeric(employee_hours_gap),
+        best_candidate = employee_focus_candidate
+      )
+  } else if(isTRUE(state$employee$direct_billing)){
+    employee_focus <-
+      list(
+        needed = FALSE,
+        cost_coverage_ok = TRUE,
+        hours_gap = 0,
+        best_candidate = NULL
+      )
+  }
+
+
+  list(
+    available = length(top_candidates) > 0L,
+    method = "local_1pct_guidance_with_elasticity_and_utilization",
+    objective = "improve_monthly_net",
+    candidates = top_candidates,
+    employee_focus = employee_focus,
+    assumptions = list(
+      price_elasticity = as.numeric(FBC_PRICE_ELASTICITY25),
+      owner_utilization_thresholds = as.list(FBC_OWNER_UTIL_THRESHOLDS19),
+      owner_utilization_weights = as.list(FBC_OWNER_UTIL_WEIGHTS19),
+      employee_utilization_thresholds = as.list(FBC_EMPLOYEE_UTIL_THRESHOLDS19),
+      employee_utilization_weights = as.list(FBC_EMPLOYEE_UTIL_WEIGHTS19)
+    ),
+    note = paste(
+      "Orientation only: standardized local 1 percent scenarios.",
+      "Price effects include demand elasticity.",
+      "Additional-hour effects use the marginal utilization model.",
+      "Real feasible bounds are confirmed by the user before P1 optimization."
+    )
+  )
+}
+
+
 fbc_current_financing_payload <- function(state){
   if(!isTRUE(state$financing$active)){
     return(list(status="no_financing",current=NULL,alternative=NULL,comparison=NULL))
@@ -515,15 +1179,28 @@ ds <- state$financing$debt_service_month
 debt <- calc_current_debt_capacity19(state, revenue)
 dscr <- if(is.finite(ds) && ds>0) debt$debt_service_ratio else NULL
 
+sensitivity <-
+  fbc_sensitivity_payload(
+    state,
+    cfg
+  )
+
+decision_guidance <-
+  fbc_decision_guidance_payload(
+    state = state,
+    cfg = cfg,
+    employee_break_even_hours = emp_be
+  )
+
   list(
   schema_version="fbc_decision_payload_v1",
   status="no_evidenced_lever",
 
   sensitivity =
-    fbc_sensitivity_payload(
-      state,
-      cfg
-    ),
+    sensitivity,
+
+  decision_guidance =
+    decision_guidance,
 
   current=list(
       expected_net=financial$net_available,
@@ -602,6 +1279,7 @@ dscr <- if(is.finite(ds) && ds>0) debt$debt_service_ratio else NULL
         "2026 tax orientation",
         "Business Break-even",
         "Employee Break-even",
+        "Decision guidance: elasticity + utilization",
         if(isTRUE(state$financing$active)) "Kapitaldienst current-state" else NULL
       )
     ),
@@ -649,8 +1327,10 @@ health_handler <- function(req, res) {
     status = "ok",
     service = "FUTURE Business Cockpit R backend",
     backend_version = "FBC_R_BACKEND_P0_1.0",
-    backend_build = "solo-mode-2026-09-24",
+    backend_build = "team-p0-role-constraint-2026-09-25",
     p0 = TRUE,
+    team_p0 = TRUE,
+    team_p1 = FALSE,
 p1_runner_enabled = TRUE,
 p1_runner_trigger = "evidence_present",
     mc_file_present =
@@ -690,6 +1370,28 @@ if (length(errors)) {
     )
   )
 }
+
+  # Team phase 1:
+  # первый прогон уже считает экономику 1–5 сотрудников, sensitivity,
+  # индивидуальную Kostendeckung и ориентацию без role-score.
+  # P1 для Team будет подключен отдельно, когда в optimizer появятся
+  # многосотрудниковые bounds и жесткое монотонное ограничение цен.
+  if(identical(cfg$mode,"owner_team")){
+    if(fbc_has_evidence(cfg)){
+      res$status <- 422
+      return(
+        list(
+          error = "team_p1_not_enabled_yet",
+          message =
+            "Team P0 ist aktiv; Team-P1 mit bestätigten Grenzen wird im nächsten Backend-Schritt angeschlossen."
+        )
+      )
+    }
+
+    return(
+      fbc_team_p0_payload44(cfg)
+    )
+  }
 
   if (!fbc_has_evidence(cfg)) {
     return(fbc_p0_payload(cfg))
