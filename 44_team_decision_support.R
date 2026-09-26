@@ -703,7 +703,7 @@ fbc_team_sensitivity_payload44 <- function(
         NULL,
         NA_real_,
         "owner_hours",
-        "Abrechenbare Stunden Inhaber/in",
+       "Abrechenbare Kundenstunden Inhaber/in",
         1,
         state$owner$billable_hours_month,
         p$net_available
@@ -1230,11 +1230,26 @@ if(is.finite(owner_h0) && owner_h0 > 0){
       )
     }
 
-    # Часы +1 %: экономический эффект + коэффициент текущей загрузки.
-    h0 <- member$billable_hours_month
+# Клиентские часы: экономический эффект + коэффициент текущей загрузки.
+# Рост ограничивается текущей оплачиваемой месячной ёмкостью сотрудника.
+h0 <- member$billable_hours_month
 
-    if(h0 > 0){
-      h1 <- h0 * 1.01
+paid_cap <-
+  fbc_team_num44(
+    member$paid_available_hours_month,
+    NA_real_
+  )
+
+if(h0 > 0){
+
+  h1 <-
+    if(is.finite(paid_cap))
+      min(
+        h0 * 1.01,
+        paid_cap
+      )
+    else
+      h0 * 1.01
 
       member_state <-
         fbc_team_member_state44(
