@@ -29,6 +29,13 @@ source(file.path(ROOT,"19_reality_constraints_V2.R"), local=.GlobalEnv)
 source(file.path(ROOT,"44_team_decision_support.R"), local=.GlobalEnv)
 source(file.path(ROOT,"36_financing_alternative.R"), local=.GlobalEnv)
 source(file.path(ROOT,"45_team_p1.R"), local=.GlobalEnv)
+source(
+  file.path(
+    ROOT,
+    "46_team_post_p1_monte_carlo.R"
+  ),
+  local=.GlobalEnv
+)
 
 `%||%` <- function(a,b) if(is.null(a) || length(a)==0L) b else a
 num1 <- function(x, default=0){
@@ -1522,12 +1529,42 @@ if (length(errors)) {
 }
 # Team P0 / P1
 if(identical(cfg$mode,"owner_team")){
+
   if(fbc_has_evidence(cfg)){
+
     return(
       tryCatch(
-        fbc_team_p1_payload45(cfg),
+        {
+
+          payload <-
+            fbc_team_p1_payload45(cfg)
+
+          team_mc_file <-
+            Sys.getenv(
+              "FBC_MC_FILE",
+              unset=file.path(
+                ROOT,
+                "data",
+                "processed",
+                "fbc_monte_carlo_draws.csv"
+              )
+            )
+
+          payload <-
+            fbc_run_team_post_p1_mc46(
+              payload=payload,
+              cfg=cfg,
+              root=ROOT,
+              mc_file=team_mc_file
+            )
+
+          payload
+        },
+
         error=function(e){
+
           res$status <- 500
+
           list(
             error="team_p1_deterministic_failed",
             message=conditionMessage(e)
@@ -1536,6 +1573,11 @@ if(identical(cfg$mode,"owner_team")){
       )
     )
   }
+
+  return(
+    fbc_team_p0_payload44(cfg)
+  )
+}
 
   return(
     fbc_team_p0_payload44(cfg)
