@@ -1387,17 +1387,7 @@ if (length(errors)) {
     )
   )
 }
-
-  # Team phase 1:
-  # первый прогон уже считает экономику 1–5 сотрудников, sensitivity,
-  # индивидуальную Kostendeckung и ориентацию без role-score.
-  # P1 для Team будет подключен отдельно, когда в optimizer появятся
-  # многосотрудниковые bounds и жесткое монотонное ограничение цен.
-  if(identical(cfg$mode,"owner_team")){
-    if(fbc_has_evidence(cfg)){
-      res$status <- 422
-      return(
-        list(
+# Team P0 / P1
 if(identical(cfg$mode,"owner_team")){
   if(fbc_has_evidence(cfg)){
     return(
@@ -1412,6 +1402,12 @@ if(identical(cfg$mode,"owner_team")){
         }
       )
     )
+  }
+
+  return(
+    fbc_team_p0_payload44(cfg)
+  )
+}
   }
 
   return(
