@@ -27,6 +27,8 @@ source(file.path(ROOT,"10_gesamtkosten_kapitaldienst.R"), local=.GlobalEnv)
 source(file.path(ROOT,"11_business_break_even.R"), local=.GlobalEnv)
 source(file.path(ROOT,"19_reality_constraints_V2.R"), local=.GlobalEnv)
 source(file.path(ROOT,"44_team_decision_support.R"), local=.GlobalEnv)
+source(file.path(ROOT,"36_financing_alternative.R"), local=.GlobalEnv)
+source(file.path(ROOT,"45_team_p1_optimizer.R"), local=.GlobalEnv)
 
 `%||%` <- function(a,b) if(is.null(a) || length(a)==0L) b else a
 num1 <- function(x, default=0){
@@ -1327,10 +1329,10 @@ health_handler <- function(req, res) {
     status = "ok",
     service = "FUTURE Business Cockpit R backend",
     backend_version = "FBC_R_BACKEND_P0_1.0",
-    backend_build = "team-p0-role-constraint-2026-09-25",
+    backend_build = "team-p1-bounded-optimizer-2026-09-26",,
     p0 = TRUE,
     team_p0 = TRUE,
-    team_p1 = FALSE,
+    team_p1 = TRUE,
 p1_runner_enabled = TRUE,
 p1_runner_trigger = "evidence_present",
     mc_file_present =
@@ -1396,17 +1398,26 @@ if (length(errors)) {
       res$status <- 422
       return(
         list(
-          error = "team_p1_not_enabled_yet",
-          message =
-            "Team P0 ist aktiv; Team-P1 mit bestätigten Grenzen wird im nächsten Backend-Schritt angeschlossen."
-        )
-      )
-    }
-
+if(identical(cfg$mode,"owner_team")){
+  if(fbc_has_evidence(cfg)){
     return(
-      fbc_team_p0_payload44(cfg)
+      tryCatch(
+        fbc_team_p1_payload45(cfg),
+        error=function(e){
+          res$status <- 500
+          list(
+            error="team_p1_deterministic_failed",
+            message=conditionMessage(e)
+          )
+        }
+      )
     )
   }
+
+  return(
+    fbc_team_p0_payload44(cfg)
+  )
+}
 
   if (!fbc_has_evidence(cfg)) {
     return(fbc_p0_payload(cfg))
