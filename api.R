@@ -1089,11 +1089,143 @@ fbc_decision_guidance_payload <- function(
   }
 
 
+  # ----------------------------------------------------------
+  # Видимая управленческая ориентация
+  # ----------------------------------------------------------
+  # candidates остаётся математическим top-3 для совместимости и аудита.
+  # display_guidance отвечает уже на управленческий вопрос:
+  # - если сотрудник не покрывает затраты, эта структурная проблема идёт первой;
+  # - если Nettoziel ещё не достигнута, отдельно показываем сильнейший общий рычаг;
+  # - если структурной проблемы нет, можно показать до трёх глобальных рычагов;
+  # - если цель достигнута и сотрудник окупается, не подталкиваем к изменениям.
+  target <-
+    num1(
+      state$owner$monthly_target,
+      0
+    )
+
+  target_reached <-
+    is.finite(target) &&
+    as.numeric(base_net) >= target - 0.01
+
+  display_guidance <- list()
+
+  if(
+    !is.null(employee_focus) &&
+    isTRUE(employee_focus$needed)
+  ){
+    employee_candidates <-
+      Filter(
+        function(x)
+          identical(
+            x$actor,
+            "employee"
+          ),
+        candidates
+      )
+
+    display_guidance[[length(display_guidance) + 1L]] <-
+      list(
+        guidance_type =
+          "employee_cost_coverage",
+        actor =
+          "employee",
+        actor_label =
+          "Mitarbeiter/in",
+        coverage_open =
+          TRUE,
+        hours_gap =
+          as.numeric(employee_focus$hours_gap),
+        suggested_levers =
+          if(length(employee_candidates))
+            as.list(
+              vapply(
+                employee_candidates,
+                function(x)
+                  as.character(x$lever),
+                character(1)
+              )
+            )
+          else
+            list(),
+        best_candidate =
+          employee_focus$best_candidate
+      )
+  }
+
+  if(!isTRUE(target_reached) && length(candidates)){
+    if(
+      !is.null(employee_focus) &&
+      isTRUE(employee_focus$needed)
+    ){
+      # Структурную проблему сотрудника уже показали отдельно.
+      # Для второго пункта по возможности выбираем самый сильный
+      # общий рычаг вне этого же сотрудника, чтобы не дублировать мысль.
+      distinct_global <-
+        Filter(
+          function(x)
+            !identical(
+              x$actor,
+              "employee"
+            ),
+          candidates
+        )
+
+      global_best <-
+        if(length(distinct_global))
+          distinct_global[[1]]
+        else
+          candidates[[1]]
+
+      global_best$guidance_type <-
+        "global_strongest"
+
+      display_guidance[[length(display_guidance) + 1L]] <-
+        global_best
+    } else {
+      # Если структурной проблемы нет, ранжированный финансовый top-3
+      # является корректной ориентацией. Первый пункт маркируем как
+      # сильнейший, остальные как дополнительные.
+      for(i in seq_along(top_candidates)){
+        item <- top_candidates[[i]]
+        item$guidance_type <-
+          if(i == 1L)
+            "global_strongest"
+          else
+            "global_secondary"
+
+        display_guidance[[length(display_guidance) + 1L]] <-
+          item
+      }
+    }
+  }
+
+
   list(
-    available = length(top_candidates) > 0L,
-    method = "local_1pct_guidance_with_elasticity_and_utilization",
+    available = length(display_guidance) > 0L,
+    method = "structural_coverage_plus_global_guidance_with_elasticity_and_utilization",
     objective = "improve_monthly_net",
+    # Mathematical ranking remains available for audit / backward compatibility.
     candidates = top_candidates,
+    # Human-facing recommendation order.
+    display_guidance = display_guidance,
+    target_reached = isTRUE(target_reached),
+    guidance_status =
+      if(
+        isTRUE(target_reached) &&
+        (
+          is.null(employee_focus) ||
+          !isTRUE(employee_focus$needed)
+        )
+      )
+        "target_reached_no_change_prompt"
+      else if(
+        !is.null(employee_focus) &&
+        isTRUE(employee_focus$needed)
+      )
+        "employee_cost_coverage_open"
+      else
+        "target_gap_open",
     employee_focus = employee_focus,
     assumptions = list(
       price_elasticity = as.numeric(FBC_PRICE_ELASTICITY25),
@@ -1103,9 +1235,10 @@ fbc_decision_guidance_payload <- function(
       employee_utilization_weights = as.list(FBC_EMPLOYEE_UTIL_WEIGHTS19)
     ),
     note = paste(
-      "Orientation only: standardized local 1 percent scenarios.",
+      "Orientation separates structural employee cost coverage from global financial sensitivity.",
       "Price effects include demand elasticity.",
       "Additional-hour effects use the marginal utilization model.",
+      "If the Nettoziel is already reached and no structural employee issue is open, no change prompt is shown.",
       "Real feasible bounds are confirmed by the user before P1 optimization."
     )
   )
