@@ -1449,15 +1449,176 @@ best <-
       )
   }
 
+  # ----------------------------------------------------------
+  # Видимая управленческая ориентация для Team
+  # ----------------------------------------------------------
+  # Важно различать:
+  # 1) глобальную чувствительность общего net_available;
+  # 2) структурную проблему конкретного сотрудника, который пока
+  #    не покрывает собственные затраты.
+  #
+  # Поэтому сначала выводим сотрудников с открытой Kostendeckung,
+  # а затем отдельным пунктом — самый сильный общий рычаг бизнеса.
+  # Для Team-P1 при этом по-прежнему подтверждается максимум 3 рычага.
+  # ----------------------------------------------------------
+
+  global_candidates <-
+    head(candidates, 3L)
+
+  display_guidance <- list()
+  confirmation_candidates <- list()
+  used_confirmation_levers <- character()
+
+  add_confirmation_candidate <- function(x){
+    if(is.null(x) || !is.list(x))
+      return(invisible(NULL))
+
+    lever <- as.character(x$lever %||% "")[1]
+
+    if(
+      !nzchar(lever) ||
+      lever %in% used_confirmation_levers ||
+      length(confirmation_candidates) >= 3L
+    )
+      return(invisible(NULL))
+
+    confirmation_candidates[[length(confirmation_candidates) + 1L]] <<- x
+    used_confirmation_levers <<-
+      c(
+        used_confirmation_levers,
+        lever
+      )
+
+    invisible(NULL)
+  }
+
+  # Каждый сотрудник с открытым покрытием получает отдельный
+  # структурный сигнал независимо от размера его 1%-эффекта на общий net.
+  for(focus in employee_focus){
+    actor_candidates <-
+      Filter(
+        function(x)
+          identical(
+            x$actor,
+            focus$actor
+          ),
+        candidates
+      )
+
+    suggested_levers <-
+      if(length(actor_candidates))
+        as.list(
+          vapply(
+            actor_candidates,
+            function(x)
+              as.character(x$lever),
+            character(1)
+          )
+        )
+      else
+        list()
+
+    display_guidance[[length(display_guidance) + 1L]] <-
+      list(
+        guidance_type =
+          "employee_cost_coverage",
+        actor =
+          focus$actor,
+        actor_label =
+          focus$actor_label,
+        role =
+          focus$role,
+        coverage_open =
+          TRUE,
+        hours_gap =
+          focus$hours_gap,
+        suggested_levers =
+          suggested_levers,
+        best_candidate =
+          focus$best_candidate
+      )
+
+    add_confirmation_candidate(
+      focus$best_candidate
+    )
+  }
+
+  # Самый сильный общий рычаг показываем отдельно от структурных
+  # проблем сотрудников. Если возможно, избегаем повторения того же
+  # сотрудника, который уже выведен как coverage_open.
+  global_for_display <- NULL
+
+  if(length(candidates)){
+    uncovered_actors <-
+      if(length(employee_focus))
+        vapply(
+          employee_focus,
+          function(x)
+            as.character(x$actor),
+          character(1)
+        )
+      else
+        character()
+
+    distinct_global <-
+      Filter(
+        function(x)
+          !as.character(x$actor) %in%
+            uncovered_actors,
+        candidates
+      )
+
+    global_for_display <-
+      if(length(distinct_global))
+        distinct_global[[1]]
+      else
+        candidates[[1]]
+
+    global_item <- global_for_display
+    global_item$guidance_type <-
+      "global_strongest"
+
+    display_guidance[[length(display_guidance) + 1L]] <-
+      global_item
+
+    add_confirmation_candidate(
+      global_for_display
+    )
+  }
+
+  # Если после структурных сигналов осталось меньше трех предложений
+  # для подтверждения, заполняем свободные места следующими сильными
+  # глобальными кандидатами без дублей.
+  if(length(candidates)){
+    for(x in candidates){
+      if(length(confirmation_candidates) >= 3L)
+        break
+
+      add_confirmation_candidate(x)
+    }
+  }
+
   list(
     available =
-      length(candidates) > 0L,
+      length(display_guidance) > 0L ||
+      length(confirmation_candidates) > 0L,
     method =
-      "team_local_1pct_guidance_without_role_score",
+      "team_structural_coverage_plus_global_guidance_without_role_score",
     objective =
       "improve_monthly_net",
+    # Backward-compatible field used by older frontend versions:
+    # max. 3 concrete levers suggested for Team-P1 confirmation.
     candidates =
-      head(candidates, 3L),
+      confirmation_candidates,
+    # Pure global ranking remains available separately for audit/display.
+    global_candidates =
+      global_candidates,
+    # Human-facing guidance: uncovered employees first, then strongest
+    # overall business lever.
+    display_guidance =
+      display_guidance,
+    confirmation_candidates =
+      confirmation_candidates,
     employee_focus =
       employee_focus,
     role_price_structure =
@@ -1833,7 +1994,7 @@ fbc_team_p0_payload44 <- function(cfg){
     audit = list(
       path = "TEAM_P0",
       evidence_gate =
-        "team P1 is not enabled in this phase",
+        "team P1 requires 1 to 3 user-confirmed bounds",
       role_priority_guard =
         "role order is never multiplied into economic effect",
       fixed_role_gap =
