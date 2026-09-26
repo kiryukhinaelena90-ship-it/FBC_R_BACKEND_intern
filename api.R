@@ -377,7 +377,7 @@ fbc_sensitivity_payload <- function(state, cfg){
   rows[[length(rows) + 1L]] <-
     make_row(
       lever = "owner_hours",
-      label = "Abrechenbare Inhaberstunden",
+      label = "Abrechenbare Kundenstunden Inhaber/in",
 
       changed_net =
         eval_net(
@@ -419,7 +419,7 @@ fbc_sensitivity_payload <- function(state, cfg){
     rows[[length(rows) + 1L]] <-
       make_row(
         lever = "employee_billable_hours",
-        label = "Abrechenbare Mitarbeiterstunden",
+        label = "Abrechenbare Kundenstunden Mitarbeiter/in",
 
         changed_net =
           eval_net(
@@ -766,7 +766,7 @@ fbc_decision_guidance_payload <- function(
         actor = "owner",
         actor_label = "Inhaber/in",
         lever = "owner_hours",
-        lever_label = "Abrechenbare Stunden Inhaber/in",
+        lever_label = "Abrechenbare Kundenstunden Inhaber/in",
         direction = "increase",
         changed_net = owner_hours_net,
         raw_changed_net = owner_hours_raw_net,
