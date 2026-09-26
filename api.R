@@ -1329,7 +1329,7 @@ health_handler <- function(req, res) {
     status = "ok",
     service = "FUTURE Business Cockpit R backend",
     backend_version = "FBC_R_BACKEND_P0_1.0",
-    backend_build = "team-p1-bounded-optimizer-2026-09-26",,
+    backend_build = "team-p1-bounded-optimizer-2026-09-26",
     p0 = TRUE,
     team_p0 = TRUE,
     team_p1 = TRUE,
