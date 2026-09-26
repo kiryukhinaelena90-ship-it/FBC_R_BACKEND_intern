@@ -703,7 +703,7 @@ fbc_team_sensitivity_payload44 <- function(
         NULL,
         NA_real_,
         "owner_hours",
-        "Abrechenbare Stunden Inhaber/in",
+       "Abrechenbare Kundenstunden Inhaber/in",
         1,
         state$owner$billable_hours_month,
         p$net_available
@@ -965,13 +965,27 @@ fbc_team_guidance_payload44 <- function(
   # ----------------------------------------------------------
   # Владелец: часы с учетом маржинальной зоны загрузки
   # ----------------------------------------------------------
-  owner_h0 <-
-    as.numeric(
-      state$owner$billable_hours_month
-    )
+owner_h0 <-
+  as.numeric(
+    state$owner$billable_hours_month
+  )
 
-  if(is.finite(owner_h0) && owner_h0 > 0){
-    owner_h1 <- owner_h0 * 1.01
+owner_cap <-
+  fbc_team_num44(
+    state$owner$physical_available_hours_month,
+    NA_real_
+  )
+
+if(is.finite(owner_h0) && owner_h0 > 0){
+
+  owner_h1 <-
+    if(is.finite(owner_cap))
+      min(
+        owner_h0 * 1.01,
+        owner_cap
+      )
+    else
+      owner_h0 * 1.01
 
     u0 <-
       fbc_owner_utilization19(
@@ -1000,7 +1014,13 @@ fbc_team_guidance_payload44 <- function(
       else
         NA_real_
 
-    if(!identical(as.character(u0$zone), "overload")){
+   if(
+  owner_h1 > owner_h0 + 1e-9 &&
+  !identical(
+    as.character(u0$zone),
+    "overload"
+  )
+){
       raw_point <-
         fbc_team_eval_point44(
           state,
@@ -1210,11 +1230,26 @@ fbc_team_guidance_payload44 <- function(
       )
     }
 
-    # Часы +1 %: экономический эффект + коэффициент текущей загрузки.
-    h0 <- member$billable_hours_month
+# Клиентские часы: экономический эффект + коэффициент текущей загрузки.
+# Рост ограничивается текущей оплачиваемой месячной ёмкостью сотрудника.
+h0 <- member$billable_hours_month
 
-    if(h0 > 0){
-      h1 <- h0 * 1.01
+paid_cap <-
+  fbc_team_num44(
+    member$paid_available_hours_month,
+    NA_real_
+  )
+
+if(h0 > 0){
+
+  h1 <-
+    if(is.finite(paid_cap))
+      min(
+        h0 * 1.01,
+        paid_cap
+      )
+    else
+      h0 * 1.01
 
       member_state <-
         fbc_team_member_state44(
@@ -1249,7 +1284,13 @@ fbc_team_guidance_payload44 <- function(
         else
           NA_real_
 
-      if(!identical(as.character(u0$zone), "overload")){
+    if(
+  h1 > h0 + 1e-9 &&
+  !identical(
+    as.character(u0$zone),
+    "overload"
+  )
+){
         raw_hours <- setNames(h1, member$id)
         guidance_hours <-
           setNames(
