@@ -28,7 +28,7 @@ source(file.path(ROOT,"11_business_break_even.R"), local=.GlobalEnv)
 source(file.path(ROOT,"19_reality_constraints_V2.R"), local=.GlobalEnv)
 source(file.path(ROOT,"44_team_decision_support.R"), local=.GlobalEnv)
 source(file.path(ROOT,"36_financing_alternative.R"), local=.GlobalEnv)
-source(file.path(ROOT,"45_team_p1_optimizer.R"), local=.GlobalEnv)
+source(file.path(ROOT,"45_team_p1.R"), local=.GlobalEnv)
 
 `%||%` <- function(a,b) if(is.null(a) || length(a)==0L) b else a
 num1 <- function(x, default=0){
@@ -1402,12 +1402,6 @@ if(identical(cfg$mode,"owner_team")){
         }
       )
     )
-  }
-
-  return(
-    fbc_team_p0_payload44(cfg)
-  )
-}
   }
 
   return(
