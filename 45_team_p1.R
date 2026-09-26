@@ -141,19 +141,26 @@ fbc_team_registry45 <- function(cfg, state){
         next
       }
 
-      if(identical(name,"owner_hours")){
-        cur <- as.numeric(state$owner$billable_hours_month)
-        up <- fbc_num45(b$upper)
-        if(!is.finite(up) || up <= cur + 1e-9)
-          stop("Inhaberstunden: Obergrenze muss über dem aktuellen Wert liegen.")
+if(identical(name,"owner_hours")){
+  cur <- as.numeric(state$owner$billable_hours_month)
+  up <- fbc_num45(b$upper)
 
-        cap <- fbc_num45(state$owner$physical_available_hours_month, NA_real_)
-        if(is.finite(cap) && up > cap + 1e-8)
-          stop("Inhaberstunden: bestätigte Obergrenze überschreitet die verfügbare Monatskapazität.")
+  if(!is.finite(up) || up <= cur + 1e-9)
+    stop("Inhaberstunden: Obergrenze muss über dem aktuellen Wert liegen.")
 
-        add_row(name,"owner_hours",cur,cur,up,months=fbc_impl_months45(b))
-        next
-      }
+  # Для владельца физическая месячная ёмкость не является hard cap.
+  # Перегрузка оценивается отдельно через utilization-модель.
+  add_row(
+    name,
+    "owner_hours",
+    cur,
+    cur,
+    up,
+    months=fbc_impl_months45(b)
+  )
+
+  next
+}
 
       matched <- FALSE
       for(member in state$employees){
