@@ -1579,10 +1579,6 @@ if(identical(cfg$mode,"owner_team")){
   )
 }
 
-  return(
-    fbc_team_p0_payload44(cfg)
-  )
-}
 
   if (!fbc_has_evidence(cfg)) {
     return(fbc_p0_payload(cfg))
