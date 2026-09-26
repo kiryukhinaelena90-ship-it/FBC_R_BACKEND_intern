@@ -965,13 +965,27 @@ fbc_team_guidance_payload44 <- function(
   # ----------------------------------------------------------
   # Владелец: часы с учетом маржинальной зоны загрузки
   # ----------------------------------------------------------
-  owner_h0 <-
-    as.numeric(
-      state$owner$billable_hours_month
-    )
+owner_h0 <-
+  as.numeric(
+    state$owner$billable_hours_month
+  )
 
-  if(is.finite(owner_h0) && owner_h0 > 0){
-    owner_h1 <- owner_h0 * 1.01
+owner_cap <-
+  fbc_team_num44(
+    state$owner$physical_available_hours_month,
+    NA_real_
+  )
+
+if(is.finite(owner_h0) && owner_h0 > 0){
+
+  owner_h1 <-
+    if(is.finite(owner_cap))
+      min(
+        owner_h0 * 1.01,
+        owner_cap
+      )
+    else
+      owner_h0 * 1.01
 
     u0 <-
       fbc_owner_utilization19(
