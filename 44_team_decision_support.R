@@ -1031,7 +1031,7 @@ if(is.finite(owner_h0) && owner_h0 > 0){
         actor_label = "Inhaber/in",
         lever = "owner_hours",
         lever_label =
-          "Abrechenbare Stunden Inhaber/in",
+          "Abrechenbare Kundenstunden Inhaber/in",
         direction = "increase",
         guidance_net =
           guidance_point$net_available,
