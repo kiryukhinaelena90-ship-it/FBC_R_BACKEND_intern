@@ -1014,7 +1014,13 @@ if(is.finite(owner_h0) && owner_h0 > 0){
       else
         NA_real_
 
-    if(!identical(as.character(u0$zone), "overload")){
+   if(
+  owner_h1 > owner_h0 + 1e-9 &&
+  !identical(
+    as.character(u0$zone),
+    "overload"
+  )
+){
       raw_point <-
         fbc_team_eval_point44(
           state,
@@ -1263,7 +1269,13 @@ if(is.finite(owner_h0) && owner_h0 > 0){
         else
           NA_real_
 
-      if(!identical(as.character(u0$zone), "overload")){
+    if(
+  h1 > h0 + 1e-9 &&
+  !identical(
+    as.character(u0$zone),
+    "overload"
+  )
+){
         raw_hours <- setNames(h1, member$id)
         guidance_hours <-
           setNames(
