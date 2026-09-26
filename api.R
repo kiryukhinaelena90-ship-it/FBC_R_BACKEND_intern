@@ -1356,7 +1356,22 @@ analyze_handler <- function(req, res) {
   }
 
   cfg <- req$body
-
+# JSON-массив Team может быть распознан plumber/jsonlite как data.frame.
+# Преобразуем строки обратно в список сотрудников.
+if(
+  identical(cfg$mode, "owner_team") &&
+  is.data.frame(cfg$employees)
+){
+  cfg$employees <-
+    lapply(
+      seq_len(nrow(cfg$employees)),
+      function(i){
+        as.list(
+          cfg$employees[i, , drop = FALSE]
+        )
+      }
+    )
+}
   errors <- fbc_validate_request(cfg)
 
 if (length(errors)) {

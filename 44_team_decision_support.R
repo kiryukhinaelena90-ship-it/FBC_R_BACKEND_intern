@@ -1427,10 +1427,8 @@ fbc_team_guidance_payload44 <- function(
         )
 
       if(any(is.finite(coverage_effects) & coverage_effects > 0))
-        best <-
-          actor_candidates[
-            [which.max(coverage_effects)]
-          ]
+best <-
+  actor_candidates[[which.max(coverage_effects)]]
     }
 
     employee_focus[[length(employee_focus) + 1L]] <-
